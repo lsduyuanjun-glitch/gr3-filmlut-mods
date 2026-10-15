@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GR III 胶片滤镜工具</title>
+<style>
+  :root {
+    --bg: #eceae6;
+    --card: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #8a8a86;
+    --line: #e2dfd9;
+    --accent: #1a1a1a;
+    --ok: #1e7d46;
+    --warn: #a06a1a;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 10px rgba(0,0,0,.04);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    background: var(--bg); color: var(--ink);
+    font-size: 13px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ===== 顶栏 ===== */
+  .topbar {
+    background: #fff; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 18px; height: 46px; position: sticky; top: 0; z-index: 10;
+  }
+  .gr-logo {
+    width: 30px; height: 30px; background: var(--ink); color: #fff;
+    border-radius: 7px; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px; letter-spacing: .5px;
+  }
+  .topbar .t1 { font-weight: 700; font-size: 14px; }
+  .topbar .t2 { font-size: 11px; color: var(--muted); margin-top: -2px; }
+  .topbar .spacer { flex: 1; }
+  .topbar .env { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #ccc; }
+  .dot.ok { background: var(--ok); }
+  .dot.err { background: #c0392b; }
+
+  /* ===== 三栏布局 ===== */
+  .layout {
+    display: grid; grid-template-columns: 240px 1fr 250px;
+    gap: 14px; max-width: 1180px; margin: 14px auto; padding: 0 14px 40px;
+    align-items: start;
+  }
+  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .panel + .panel { margin-top: 14px; }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: 1px;
+  }
+  .panel-body { padding: 12px 14px; }
+
+  .fw-name { font-weight: 600; font-size: 14px; }
+  .fw-ver { font-size: 11px; color: var(--muted); font-family: Menlo, monospace; margin: 2px 0 10px; }
+  .btn {
+    border: 1px solid var(--line); background: #faf9f7; color: var(--ink);
+    padding: 7px 14px; border-radius: 7px; font-size: 12px; cursor: pointer;
+    transition: all .12s;
+  }
+  .btn:hover { background: #f0eeea; }
+  .btn-dark {
+    background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 600;
+  }
+  .btn-dark:hover { background: #000; }
+  .btn-dark:disabled { background: #b5b3af; border-color: #b5b3af; cursor: wait; }
+  .btn-block { display: block; width: 100%; text-align: center; }
+
+  .film-list { max-height: 480px; overflow-y: auto; }
+  .film-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; cursor: pointer; border-bottom: 1px solid #f2f0ec;
+  }
+  .film-item:last-child { border-bottom: none; }
+  .film-item:hover { background: #f7f6f3; }
+  .film-item.sel { background: #efedea; }
+  .film-item.locked { cursor: default; opacity: .55; }
+  .film-item.locked:hover { background: none; }
+
+  .thumb {
+    width: 38px; height: 38px; border-radius: 5px; flex: none;
+    position: relative; overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.12);
+    display: flex; flex-direction: column;
+  }
+  .thumb.lg { width: 72px; height: 72px; border-radius: 8px; }
+  .thumb.grey { filter: grayscale(1); opacity: .55; }
+  .thumb .strip { height: 10%; flex: none; }
+  .thumb .brand {
+    height: 22%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-style: italic; letter-spacing: .2px; font-size: 6px;
+  }
+  .thumb.lg .brand { font-size: 12px; height: 20%; }
+  .thumb .bname {
+    flex: none; height: 18%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; letter-spacing: .4px; line-height: 1; font-size: 5.5px; white-space: nowrap;
+  }
+  .thumb.lg .bname { font-size: 11px; height: 16%; }
+  .thumb .bspeed {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; letter-spacing: -.3px; line-height: 1; font-size: 15px;
+  }
+  .thumb.lg .bspeed { font-size: 30px; }
+
+  .fi-info { min-width: 0; flex: 1; }
+  .fi-name { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fi-sub { font-size: 11px; color: var(--muted); margin-top: 1px; line-height: 1.5; }
+  .fi-sub .meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+
+  /* ===== 中栏详情 ===== */
+  .detail-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .detail-kicker { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+  .detail-title { font-size: 22px; font-weight: 700; margin: 2px 0 2px; }
+  .detail-sub { font-size: 12px; color: var(--muted); }
+
+  .field-label { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+  select.inp, input.inp {
+    width: 100%; padding: 8px 10px; font-size: 13px;
+    border: 1px solid var(--line); border-radius: 7px; background: #faf9f7; color: var(--ink);
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238a8a86' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+  }
+  input.inp { background-image: none; }
+  select.inp:focus, input.inp:focus { outline: none; border-color: var(--ink); }
+
+  .de-tag {
+    display: inline-block; font-size: 12px; padding: 3px 11px; border-radius: 20px; font-weight: 600;
+    white-space: nowrap; letter-spacing: .2px;
+  }
+  .de-good { background: #e8f4ec; color: var(--ok); }
+  .de-mid { background: #fdf3e3; color: var(--warn); }
+  .de-bad { background: #fdeaea; color: #b3483c; }
+
+  .ver-badge { font-size: 10px; padding: 1px 7px; border-radius: 20px; font-weight: 600; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
+  .ver-orig { background: #e8f0fb; color: #1a56a0; border: 1px solid #bcd4f0; }
+  .ver-cal  { background: #e8f4ec; color: #1a7a3c; border: 1px solid #bfe3cb; }
+  .ver-legacy { background: #f0f0f0; color: #777; border: 1px solid #ddd; }
+  .pos-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 600; background: #eef1e9; color: #4a6b2a; border: 1px solid #d3debf; white-space: nowrap; }
+
+  .mini-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .dl-btn {
+    display: none; text-align: center; margin-top: 10px; padding: 9px 0;
+    background: #c0392b; color: #fff; text-decoration: none;
+    border-radius: 7px; font-weight: 600; font-size: 12.5px;
+  }
+  .dl-btn:hover { background: #a93226; }
+  .dl-btn.ready { display: block; background: #1e7d46; }
+  .dl-btn.ready:hover { background: #176438; }
+  .dl-btn.locked { display: block; background: #b5b3af; cursor: not-allowed; pointer-events: none; }
+  .verify-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+  .verify-badge .tick { color: #1e7d46; font-weight: 700; }
+  .verify-badge .cross { color: #b3483c; font-weight: 700; }
+  .verify-line { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 12px; }
+
+  .result-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px; }
+  .result-table th, .result-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  .result-table th { color: var(--muted); font-weight: 500; font-size: 11px; }
+  .mono { font-family: Menlo, monospace; font-size: 11px; color: var(--muted); }
+
+  .error-box {
+    background: #f7e8e6; color: #c0392b; padding: 10px 14px; border-radius: 8px;
+    font-size: 12px; margin-top: 12px; white-space: pre-wrap; display: none;
+  }
+  .loading {
+    display: inline-block; width: 12px; height: 12px; border: 2px solid #fff;
+    border-top-color: transparent; border-radius: 50%; margin-right: 6px;
+    vertical-align: -2px; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .lib-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid #f2f0ec;
+  }
+  .lib-item:last-child { border-bottom: none; }
+  .lib-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib-actions { display: flex; gap: 5px; flex: none; }
+  .btn-mini { padding: 4px 9px; font-size: 11px; border-radius: 6px; }
+  .btn-danger { color: #b3483c; border-color: #e6c2bd; background: #fdf7f6; }
+  .btn-danger:hover { background: #fbeae7; }
+
+  .v16-note {
+    background: #eef7ff; border: 1px solid #c8e0f5; border-radius: 7px;
+    padding: 10px 12px; font-size: 11.5px; color: #1a5a8a; line-height: 1.6; margin-bottom: 12px;
+  }
+  footer { max-width: 1180px; margin: 0 auto; padding: 0 14px 30px; font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="gr-logo">GR</div>
+  <div>
+    <div class="t1">GR III 胶片滤镜工具</div>
+    <div class="t2">v16 管线 · 新增影像控制项 · 12 分区色相 · RAW 显影兼容</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="env"><span class="dot" id="dot"></span><span id="statusText">检查环境…</span></div>
+</div>
+
+<div class="layout">
+  <!-- ===== 左栏 ===== -->
+  <div>
+    <div class="panel">
+      <div class="panel-head">固件</div>
+      <div class="panel-body">
+        <div class="fw-name">fwdc239b.bin</div>
+        <div class="fw-ver" id="fwVer">2.10.21.27</div>
+        <span class="hint mini-note">官方固件为底，改动可逆，可刷回</span>
+        <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
+        <div class="field-label" style="margin-bottom:8px">官方固件（基底，需自行导入）</div>
+        <div class="mini-note" style="line-height:1.7">
+          本工具以理光官方固件为底。请从理光官网下载 <b>GR III 2.10</b> 固件 <span class="mono">fwdc239b.bin</span>，放入工具目录下的 <span class="mono">official_firmware/</span> 文件夹后刷新本页。
+        </div>
+        <div class="mini-note" style="margin-top:8px">刷回官方：把官方 <span class="mono">fwdc239b.bin</span> 放 SD 卡根目录，关机按住 MENU 开机刷入即可恢复原厂。</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">胶片清单 <span class="mono" id="filmCount"></span></div>
+      <div class="film-list" id="filmList"></div>
+    </div>
+  </div>
+
+  <!-- ===== 中栏 ===== -->
+  <div class="panel">
+    <div class="panel-body" id="detail"></div>
+  </div>
+
+  <!-- ===== 右栏 ===== -->
+  <div>
+    <div class="panel">
+      <div class="panel-head">生成固件</div>
+      <div class="panel-body">
+        <div class="field-label">输出文件</div>
+        <input class="inp" value="gr3_film_mods_custom.bin" readonly style="margin-bottom:10px">
+        <div class="mini-note">6 个胶片追加为「新增影像控制项」，官方模式逐字节保留</div>
+        <button class="btn btn-dark btn-block build-cta" id="buildBtn" onclick="build()">生成固件</button>
+        <div id="buildStatus" style="margin-top:10px"></div>
+        <a id="dlBtn" class="dl-btn" href="/gr3_film_mods_custom.bin" download>✓ 下载固件（已验证可用）</a>
+        <div class="mini-note" id="flashHint" style="display:none">
+          <b style="color:var(--ok)">✓ 完整性验证通过 · 可回刷官方固件。</b>下载后改名 <span class="mono">fwdc239b.bin</span> 放 SD 卡根目录，关机按住 MENU 开机刷入。回刷官方：用本页「固件」区的官方 .bin 同样刷入即可恢复。
+        </div>
+      </div>
+    </div>
+    <div class="panel" id="resultPanel" style="display:none">
+      <div class="panel-head">构建结果</div>
+      <div class="panel-body" id="resultBody"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">新建胶片（上传 XMP 或 CUBE → 机内滤镜）</div>
+      <div class="panel-body">
+
+        <div class="field-label">胶片名字（机内菜单显示名）<span style="color:var(--warn);font-weight:600">· 仅限英文/数字</span></div>
+        <input class="inp" id="newFilmName" placeholder="如 Kodak 5207" oninput="asciiOnly(this)" style="margin-bottom:6px">
+        <input class="inp" id="newFilmShort" placeholder="短码（图标大字，仅英文/数字，留空用名字）" oninput="asciiOnly(this)" style="margin-bottom:10px">
+
+        <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
+
+        <div class="field-label" style="color:var(--ok)">方式 A：直接导入 .xmp 预设（全自动，推荐）</div>
+        <div class="mini-note" style="margin-bottom:6px">拖入 Lightroom 导出的 .xmp，自动解析 Look 颜色表 → cube → 拟合，无需任何手动步骤。</div>
+        <input type="file" id="newFilmXmp" accept=".xmp" style="font-size:11px;margin-bottom:8px">
+        <button class="btn btn-block btn-dark" id="xmpBtn" onclick="createFilmsFromXmp()">XMP 直读 → 拟合 → 入胶片库</button>
+        <div class="mini-note" id="xmpStatus" style="margin-top:6px"></div>
+
+        <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
+
+        <div class="field-label" style="color:var(--ok)">方式 B：直接导入 .cube LUT（全自动）</div>
+        <div class="mini-note" style="margin-bottom:6px">拖入现成的 .cube 文件（LUT_3D_SIZE），直接拟合进机内，跳过 HALD 转 cube。</div>
+        <input type="file" id="newFilmCube" accept=".cube" style="font-size:11px;margin-bottom:8px">
+        <button class="btn btn-block" id="cubeBtn" onclick="createFilmsFromCube()">CUBE 直读 → 拟合 → 入胶片库</button>
+        <div class="mini-note" id="cubeStatus" style="margin-top:6px"></div>
+
+        <div class="mini-note" style="margin-top:10px;color:var(--warn)">
+          ⚠️ 方式 A（XMP 直读）最省事，适合 Lightroom 预设；方式 B（CUBE）适合已有 LUT。两者都在本地网页端跑完拟合，自动进胶片库。
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">胶片库 <span class="mono" id="libCount"></span></div>
+      <div class="panel-body" id="filmLib"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">说明</div>
+      <div class="panel-body mini-note">
+        ⚠️ 刷第三方固件有变砖风险，请自行评估。本工具离线运行，不联网、不上传数据。<br><br>
+        当前为 <b>v16 管线</b>：胶片作为「新增影像控制项」追加到机内菜单末尾（官方模式之后），不覆盖任何官方模式。<br><br>
+        已启用 <b>12 分区色相</b>（MultiAxial）：机内色相校正默认中性，后续可按胶片特性偏移。<br><br>
+        <b>HDF 版兼容</b>：胶片图标已避开 HDF 开关图标区（0x05-0x07），改用安全 ID。<br><br>
+        <b>⚠️ 实拍注意</b>：12 分区色相有 speckle（灰部杂点）风险，实拍时留意灰部；HDF 版未经原作者实测，请自行验证。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="error-box" id="error" style="max-width:1180px;margin:0 auto 20px"></div>
+
+<footer></footer>
+
+<script>
+  // v16 模型：4 款胶片（英泽君基底 + 特性校准，最终统一命名）
+  const FILMS = [
+    { key: 'portra400', name: 'Portra 400', code: 'P400', de: 1.79,
+      box: '#e8b04b', strip: '#e31e24', brandCol: '#fcfcfc', bname: 'PORTRA', txtCol: '#141210', speedText: '400' },
+    { key: 'ektar100', name: 'Ektar 100', code: 'E100', de: 2.11,
+      box: '#cc1c20', strip: '#e31e24', brandCol: '#fcfcfc', bname: 'EKTAR', txtCol: '#fcfcfc', speedText: '100' },
+    { key: '5207', name: 'Kodak 5207', code: '5207', de: 1.62,
+      box: '#b8954a', strip: '#e31e24', brandCol: '#fcfcfc', bname: 'VISION3', txtCol: '#fcfcfc', speedText: '250D' },
+    { key: '5219', name: 'Kodak 5219', code: '5219', de: 1.89,
+      box: '#102244', strip: '#e31e24', brandCol: '#fcfcfc', bname: 'VISION3', txtCol: '#fcfcfc', speedText: '500T' },
+  ];
+
+  // 官方保留模式（v16 新增条目模型下，这些保持不变）
+  const KEPT = [
+    { name: '标准', origin: 'Standard' },
+    { name: '正片', origin: 'Positive Film' },
+    { name: '负片', origin: 'Negative Film' },
+    { name: '黑白', origin: 'Monotone' },
+    { name: '柔黑白', origin: 'Soft Monotone' },
+    { name: '硬黑白', origin: 'Hard Monotone' },
+    { name: '高对比黑白', origin: 'Hi-Contrast B&W' },
+  ];
+
+  // 胶片库（用户自建，动态加载）
+  let LIB_FILMS = [];
+  // 旧操作模式：先选定槽位（新增#1~#6），再在详情里给这个槽位选滤镜
+  let selSlot = 0;
+
+  // v16 新增槽位分配：6 个槽位（固定），默认前 4 槽依次装 4 款胶片，后 2 槽留空待你选
+  let SLOT_ASSIGN = ['portra400', 'ektar100', '5207', '5219', null, null];
+
+  // 机内原生颗粒引擎（Particle）：已固定植入固件（--grain-native）。
+  // 颗粒强度不在网页选择，刷机后由相机菜单「颗粒效果」四档控制：Off / Low / Mid / High。
+  // 各档大致效果见 renderDetail 里的「机内颗粒档位」说明表。
+  function libToFilm(f) {
+    const b = f.box || [];
+    const body = b[0] ? `rgb(${b[0].join(',')})` : '#102244';
+    const strip = b[1] ? `rgb(${b[1].join(',')})` : '#e31e24';
+    const brandCol = b[2] === 0 ? '#fcfcfc' : '#141210';
+    const bname = b[3] || f.name;
+    const txtCol = b[4] === 0 ? '#fcfcfc' : '#141210';
+    const speedText = b[5] || f.short || f.name;
+    return {
+      key: f.key, name: '★ ' + f.name + '（自建）', code: f.short || f.name, de: f.de,
+      box: body, strip, brandCol, bname, txtCol, speedText, version: 'legacy',
+    };
+  }
+
+  async function loadLibrary() {
+    try {
+      const d = await (await fetch('/film/list')).json();
+      if (d.ok && d.films) {
+        LIB_FILMS = d.films;
+        const keys = new Set(FILMS.map(f => f.key));
+        d.films.forEach(f => {
+          if (!keys.has(f.key)) {
+            FILMS.push(libToFilm(f));   // 只进胶片库，不自动开新槽位（槽位固定 6 个）
+          }
+        });
+        renderFilmLib();
+      }
+    } catch (e) { /* 胶片库加载失败不阻塞主流程 */ }
+  }
+
+  function boxHTML(f, size = '') {
+    return `<div class="thumb ${size}" style="background:${f.box}">
+      <div class="strip" style="background:${f.strip}"></div>
+      <div class="brand" style="color:${f.brandCol}">Kodak</div>
+      <div class="bname" style="color:${f.txtCol}">${f.bname}</div>
+      <div class="bspeed" style="color:${f.txtCol}">${f.speedText}</div>
+    </div>`;
+  }
+
+  function deClass(de) { return de < 1.8 ? 'de-good' : (de < 2.5 ? 'de-mid' : 'de-bad'); }
+  function filmOf(key) { return FILMS.find(f => f.key === key); }
+
+  /* ===== 左栏：胶片清单（6 胶片 + 官方保留） ===== */
+  function renderList() {
+    const box = document.getElementById('filmList');
+    let html = '';
+    SLOT_ASSIGN.forEach((key, idx) => {
+      const f = key ? filmOf(key) : null;
+      if (!f) {
+        html += `
+        <div class="film-item ${idx === selSlot ? 'sel' : ''}" onclick="selectSlot(${idx})">
+          <div class="thumb grey" style="background:#c9c7c1">
+            <div class="strip" style="background:#a5a39d"></div>
+            <div class="brand" style="color:#ffffff">GR III</div>
+            <div class="bname" style="color:#ffffff">&nbsp;</div>
+            <div class="bspeed" style="color:#ffffff;font-size:9px">空槽</div>
+          </div>
+          <div class="fi-info">
+            <div class="fi-name"><span style="color:var(--accent);font-weight:700">${idx + 1}</span> · 空槽位</div>
+            <div class="fi-sub"><div class="meta"><span class="pos-tag">新增#${idx + 1} · tone ${25 + idx}</span></div></div>
+          </div>
+        </div>`;
+        return;
+      }
+      html += `
+        <div class="film-item ${idx === selSlot ? 'sel' : ''}" onclick="selectSlot(${idx})">
+          ${boxHTML(f)}
+          <div class="fi-info">
+            <div class="fi-name"><span style="color:var(--accent);font-weight:700">${idx + 1}</span> · ${f.name}</div>
+            <div class="fi-sub">
+              <div class="meta">
+                <span class="pos-tag">新增#${idx + 1} · tone ${25 + idx}</span>
+                <span class="de-tag ${deClass(f.de)}">ΔE ${f.de}</span>
+              </div>
+            </div>
+          </div>
+        </div>`;
+    });
+    KEPT.forEach(k => {
+      html += `
+        <div class="film-item locked">
+          <div class="thumb grey" style="background:#9a9a96">
+            <div class="strip" style="background:#777773"></div>
+            <div class="brand" style="color:#ffffff">GR III</div>
+            <div class="bname" style="color:#ffffff">&nbsp;</div>
+            <div class="bspeed" style="color:#ffffff;font-size:9px">${k.name}</div>
+          </div>
+          <div class="fi-info">
+            <div class="fi-name">${k.name}</div>
+            <div class="fi-sub">${k.origin} · 保留</div>
+          </div>
+        </div>`;
+    });
+    box.innerHTML = html;
+    document.getElementById('filmCount').textContent = FILMS.length + KEPT.length;
+  }
+
+  function selectSlot(idx) {
+    selSlot = idx;
+    renderList();
+    renderDetail();
+  }
+
+  /* ===== 中栏：槽位详情（选定槽位 → 选滤镜 / 颗粒） ===== */
+  function renderDetail() {
+    const key = SLOT_ASSIGN[selSlot];
+    const f = key ? filmOf(key) : null;
+    const tone = 25 + selSlot;   // v16 追加 tone
+    const opts = FILMS.map(x => `<option value="${x.key}" ${key === x.key ? 'selected' : ''}>${x.name}</option>`).join('');
+
+    if (!f) {
+      document.getElementById('detail').innerHTML = `
+        <div class="v16-note">
+          <b>v16 管线说明</b>：这 6 个新增槽位作为「新增影像控制项」追加到机内菜单末尾（官方模式之后，tone 25 起），
+          <b>不替换任何官方模式</b>，且天然挨在一起。已启用 <b>12 分区色相</b>（MultiAxial），机内色相校正默认中性。
+        </div>
+        <div class="detail-head">
+          <div>
+            <div class="detail-kicker">影像控制 · 新增槽位 #${selSlot + 1}（tone ${tone}）</div>
+            <div class="detail-title">空槽位</div>
+            <div class="detail-sub">还没装胶片，从下面选一款装上。</div>
+          </div>
+        </div>
+        <div style="margin-top:16px">
+          <div class="field-label">滤镜胶卷 <span style="color:var(--muted);font-weight:400">（本槽位装哪款胶片）</span></div>
+          <select onchange="assignSlot(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${opts}</select>
+        </div>
+      `;
+      return;
+    }
+
+    document.getElementById('detail').innerHTML = `
+      <div class="v16-note">
+        <b>v16 管线说明</b>：这 6 个新增槽位作为「新增影像控制项」追加到机内菜单末尾（官方模式之后，tone 25 起），
+        <b>不替换任何官方模式</b>，且天然挨在一起。已启用 <b>12 分区色相</b>（MultiAxial），机内色相校正默认中性。
+      </div>
+      <div class="detail-head">
+        <div>
+          <div class="detail-kicker">影像控制 · 新增槽位 #${selSlot + 1}（tone ${tone}）</div>
+          <div class="detail-title">${f.name}</div>
+          <div class="detail-sub">机内菜单名：<b>${f.name}</b></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:flex-start;gap:16px;margin-top:16px">
+        ${boxHTML(f, 'lg')}
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+            <span class="de-tag ${deClass(f.de)}">ΔE ${f.de}</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.7">
+            <b>12 分区色相</b>：已启用（默认中性，不做色相偏移）<br>
+            <b>RAW 显影</b>：兼容（RAW 回放可对本槽位做影像控制）<br>
+            <b>机内位置</b>：新增槽位 #${selSlot + 1}（在官方「高对比黑白」之后，紧挨其他新增槽位）
+          </div>
+          <div style="margin-top:12px">
+            <div class="field-label">机内颗粒 <span style="color:var(--muted);font-weight:400">（已植入，刷机后用相机菜单调）</span></div>
+            <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:6px">本槽位已接入原生颗粒引擎，刷机后在相机「颗粒效果」菜单里选档位，网页端无需设置。</div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <tr style="border-bottom:1px solid var(--line)">
+                <td style="padding:5px 8px;color:var(--muted);width:64px">档位</td>
+                <td style="padding:5px 8px;color:var(--muted)">大致效果</td>
+              </tr>
+              <tr style="border-bottom:1px solid var(--line)">
+                <td style="padding:5px 8px;font-weight:600">Off</td>
+                <td style="padding:5px 8px">无颗粒，画面干净</td>
+              </tr>
+              <tr style="border-bottom:1px solid var(--line)">
+                <td style="padding:5px 8px;font-weight:600">Low（弱）</td>
+                <td style="padding:5px 8px">极细颗粒，几乎不可见，适合 Portra 400 / Ektar 100 这类细颗粒片</td>
+              </tr>
+              <tr style="border-bottom:1px solid var(--line)">
+                <td style="padding:5px 8px;font-weight:600">Mid（中）</td>
+                <td style="padding:5px 8px">中等颗粒，接近 5207 日光片的质感</td>
+              </tr>
+              <tr>
+                <td style="padding:5px 8px;font-weight:600">High（强）</td>
+                <td style="padding:5px 8px">粗颗粒，接近 5219 钨丝灯片 / 迫冲的感觉</td>
+              </tr>
+            </table>
+          </div>
+          <div style="margin-top:12px">
+            <div class="field-label">滤镜胶卷 <span style="color:var(--muted);font-weight:400">（本槽位装哪款胶片）</span></div>
+            <select onchange="assignSlot(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${opts}</select>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function assignSlot(n, newKey) {
+    const oldN = SLOT_ASSIGN.indexOf(newKey);
+    const oldKey = SLOT_ASSIGN[n];
+    if (oldN !== -1 && oldN !== n) SLOT_ASSIGN[oldN] = oldKey;   // 与占用该胶片的槽位交换（空槽位不交换）
+    SLOT_ASSIGN[n] = newKey;
+    renderList();
+    renderDetail();   // 保持当前槽位选中，刷新胶片展示
+  }
+
+  /* ===== 状态 ===== */
+  async function checkStatus() {
+    try {
+      const d = await (await fetch('/status')).json();
+      const dot = document.getElementById('dot');
+      const txt = document.getElementById('statusText');
+      if (d.fw_ready && d.repo_ready && d.venv_ready) {
+        dot.className = 'dot ok'; txt.textContent = '环境就绪';
+        hideFwGuide();
+      } else if (!d.fw_ready) {
+        dot.className = 'dot err'; txt.textContent = '缺少官方固件';
+        showFwGuide();
+      } else {
+        dot.className = 'dot err';
+        txt.textContent = '环境不完整：' + [
+          !d.repo_ready && '缺引擎', !d.venv_ready && '缺 Python 环境',
+        ].filter(Boolean).join('；');
+        hideFwGuide();
+      }
+    } catch (e) {
+      document.getElementById('dot').className = 'dot err';
+      document.getElementById('statusText').textContent = '无法连接后端，请确认已启动';
+    }
+  }
+
+  /* 官方固件缺失时的导入引导：告知用户去理光官网下载并放入 official_firmware/ */
+  function showFwGuide() {
+    let g = document.getElementById('fwGuide');
+    if (!g) {
+      g = document.createElement('div');
+      g.id = 'fwGuide';
+      g.style.cssText = 'margin:12px 0;padding:14px 16px;border:1px solid #f0d9b0;border-radius:10px;background:#fdf6e8;font-size:12.5px;line-height:1.7;color:#6b4a12';
+      const rl = document.getElementById('resultPanel');
+      // 插入到右栏「生成固件」面板上方，最醒目
+      const buildPanel = document.querySelector('.layout > div:last-child > .panel:first-child');
+      buildPanel.parentNode.insertBefore(g, buildPanel);
+    }
+    g.innerHTML = `
+      <div style="font-weight:700;font-size:13px;margin-bottom:6px">⚠️ 还差一步：导入官方固件</div>
+      <div>本工具以理光官方固件为底，需要你先自行下载一份 <b>GR III 2.10</b> 官方固件：</div>
+      <ol style="margin:6px 0 6px 18px">
+        <li>前往理光官网下载 GR III 固件 <span class="mono">fwdc239b.bin</span>（2.10 版）</li>
+        <li>把下载的 <span class="mono">fwdc239b.bin</span> 放入本工具目录下的 <span class="mono">official_firmware/</span> 文件夹</li>
+        <li>回到本页，点击下方「重新检测」</li>
+      </ol>
+      <button onclick="checkStatus()" style="margin-top:6px;padding:6px 14px;border:1px solid #c9a25a;border-radius:6px;background:#fff;color:#6b4a12;cursor:pointer;font-size:12.5px">重新检测</button>
+    `;
+  }
+  function hideFwGuide() {
+    const g = document.getElementById('fwGuide');
+    if (g) g.remove();
+  }
+
+  /* ===== 构建 ===== */
+  async function build() {
+    const btn = document.getElementById('buildBtn');
+    const errBox = document.getElementById('error');
+    errBox.style.display = 'none';
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading"></span>正在生成…';
+
+    try {
+      const payload = { out_name: 'gr3_film_mods_custom.bin', films: SLOT_ASSIGN.filter(Boolean) };
+      const d = await (await fetch('/build', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })).json();
+      if (d.error) throw new Error(d.error + (d.stderr ? '\n' + d.stderr : ''));
+      if (!d.ok) throw new Error('生成失败：' + JSON.stringify(d));
+      renderResult(d);
+    } catch (e) {
+      errBox.textContent = '❌ ' + e.message;
+      errBox.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '生成固件';
+    }
+  }
+
+  function renderResult(d) {
+    const st = document.getElementById('buildStatus');
+    const reversible = !!(d.repack && d.repack.fresh_history_roundtrip_exact);
+    const v = d.verify;
+    const verifyOk = !!(v && v.ok);
+    // 固定验证步骤：完整性（verify）+ 可回刷官方（repack 字节级可逆）。两者全过才放行下载。
+    const allPass = reversible && verifyOk;
+
+    const line = (ok, text) => `
+      <div class="verify-line">
+        <span class="verify-badge">${ok ? '<span class="tick">✓</span>' : '<span class="cross">✗</span>'}</span>
+        <span>${text}</span>
+      </div>`;
+
+    st.innerHTML = `
+      <div style="margin:8px 0;padding:12px 14px;border:1px solid ${allPass ? '#bfe3cb' : '#f0e0c0'};border-radius:8px;background:${allPass ? '#e8f4ec' : '#fdf8ee'};line-height:1.6">
+        <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:${allPass ? '#1a7a3c' : '#8a5a16'}">
+          ${allPass ? '✓ 固件验证全部通过，可下载使用' : '⏳ 验证未完全通过，下载已锁定'}
+        </div>
+        ${line(verifyOk, '完整性核验：4 胶片 + 12 分区色相 + RAW 显影兼容，官方模式逐字节一致' + (verifyOk ? '' : '（' + (v && v.detail || '未通过') + '）'))}
+        ${line(reversible, '可回刷官方固件：容器校验和正确，repack 字节级可逆、无损还原')}
+      </div>`;
+
+    const dl = document.getElementById('dlBtn');
+    const hint = document.getElementById('flashHint');
+    if (allPass) {
+      dl.href = '/gr3_film_mods_custom.bin?t=' + Date.now();
+      dl.className = 'dl-btn ready';
+      dl.textContent = '✓ 下载固件（已验证可用）';
+      hint.style.display = 'block';
+    } else {
+      dl.removeAttribute('href');
+      dl.className = 'dl-btn locked';
+      dl.textContent = '🔒 验证未通过，暂不可下载';
+      hint.style.display = 'none';
+    }
+
+    const rows = d.changed.map(c => `
+      <tr>
+        <td>${c.slot_cn}</td>
+        <td class="mono">${c.camera_name || c.film}</td>
+        <td class="mono">tone ${c.tone}</td>
+        <td><span class="de-tag ${deClass(c.deltaE)}">ΔE ${c.deltaE}</span></td>
+      </tr>`).join('');
+
+    document.getElementById('resultPanel').style.display = 'block';
+    document.getElementById('resultBody').innerHTML = `
+      <table class="result-table">
+        <thead><tr><th>胶片</th><th>机内名</th><th>位置</th><th>ΔE</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  /* ===== 新建胶片（XMP / CUBE → 机内滤镜） ===== */
+  // 机内字符串表/图标字体只支持 ASCII（英文+数字+常用符号），中文会导致图标豆腐块、键名污染
+  function asciiOnly(el) {
+    const v = el.value;
+    const cleaned = v.replace(/[^\x20-\x7e]/g, '');
+    if (cleaned !== v) el.value = cleaned;
+  }
+  function isAsciiName(s) { return s.length > 0 && /^[\x20-\x7e]+$/.test(s); }
+
+  async function createFilmsFromXmp() {
+    const inp = document.getElementById('newFilmXmp');
+    const name = document.getElementById('newFilmName').value.trim();
+    const short = document.getElementById('newFilmShort').value.trim();
+    const st = document.getElementById('xmpStatus');
+    const files = [...inp.files];
+    if (!files.length) { st.textContent = '请先选择 .xmp 预设文件'; return; }
+    if (!name) { st.textContent = '请先填胶片名字'; return; }
+    if (!isAsciiName(name)) { st.textContent = '胶片名字仅支持英文/数字（机内图标与菜单不支持中文）'; return; }
+    if (short && !isAsciiName(short)) { st.textContent = '短码仅支持英文/数字'; return; }
+
+    st.innerHTML = `<span class="loading"></span>正在解析 XMP 并拟合 ${files.length} 个…（三阶段拟合约需 1-3 分钟）`;
+    const btn = document.getElementById('xmpBtn');
+    btn.disabled = true;
+
+    const results = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      st.innerHTML = `<span class="loading"></span>正在处理 ${i + 1}/${files.length}：${file.name}…`;
+      const b64 = await new Promise(res => {
+        const rd = new FileReader();
+        rd.onload = () => res(rd.result.split(',')[1]);
+        rd.readAsDataURL(file);
+      });
+      const nm = files.length > 1 && i > 0 ? `${name} ${i + 1}` : name;
+      const sc = files.length > 1 && i > 0 ? `${short || name}${i + 1}` : short;
+      try {
+        const d = await (await fetch('/film/create_from_xmp', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ xmp: b64, name: nm, short: sc }),
+        })).json();
+        if (d.error) throw new Error(d.error + (d.stderr ? '\n' + d.stderr : ''));
+        results.push(d.film);
+      } catch (e) {
+        results.push({ name: nm, error: e.message });
+      }
+    }
+
+    btn.disabled = false;
+    const ok = results.filter(r => !r.error);
+    const err = results.filter(r => r.error);
+    st.innerHTML = ok.length
+      ? `✅ 完成 ${ok.length} 个：${ok.map(r => `${r.name}（ΔE ${r.de}）`).join('、')}`
+      : '';
+    if (err.length) st.innerHTML += `<div style="color:var(--warn)">❌ 失败 ${err.length}：${err.map(r => r.name + ' ' + r.error).join('；')}</div>`;
+    inp.value = '';
+    await loadLibrary();
+    renderList(); renderDetail();
+  }
+
+  async function createFilmsFromCube() {
+    const inp = document.getElementById('newFilmCube');
+    const name = document.getElementById('newFilmName').value.trim();
+    const short = document.getElementById('newFilmShort').value.trim();
+    const st = document.getElementById('cubeStatus');
+    const files = [...inp.files];
+    if (!files.length) { st.textContent = '请先选择 .cube 文件'; return; }
+    if (!name) { st.textContent = '请先填胶片名字'; return; }
+    if (!isAsciiName(name)) { st.textContent = '胶片名字仅支持英文/数字（机内图标与菜单不支持中文）'; return; }
+    if (short && !isAsciiName(short)) { st.textContent = '短码仅支持英文/数字'; return; }
+
+    st.innerHTML = `<span class="loading"></span>正在拟合 ${files.length} 个 cube…（三阶段拟合约需 1-3 分钟）`;
+    const btn = document.getElementById('cubeBtn');
+    btn.disabled = true;
+
+    const results = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      st.innerHTML = `<span class="loading"></span>正在处理 ${i + 1}/${files.length}：${file.name}…`;
+      const b64 = await new Promise(res => {
+        const rd = new FileReader();
+        rd.onload = () => res(rd.result.split(',')[1]);
+        rd.readAsDataURL(file);
+      });
+      const nm = files.length > 1 && i > 0 ? `${name} ${i + 1}` : name;
+      const sc = files.length > 1 && i > 0 ? `${short || name}${i + 1}` : short;
+      try {
+        const d = await (await fetch('/film/create_from_cube', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cube: b64, name: nm, short: sc }),
+        })).json();
+        if (d.error) throw new Error(d.error + (d.stderr ? '\n' + d.stderr : ''));
+        results.push(d.film);
+      } catch (e) {
+        results.push({ name: nm, error: e.message });
+      }
+    }
+
+    btn.disabled = false;
+    const ok = results.filter(r => !r.error);
+    const err = results.filter(r => r.error);
+    st.innerHTML = ok.length
+      ? `✅ 完成 ${ok.length} 个：${ok.map(r => `${r.name}（ΔE ${r.de}）`).join('、')}`
+      : '';
+    if (err.length) st.innerHTML += `<div style="color:var(--warn)">❌ 失败 ${err.length}：${err.map(r => r.name + ' ' + r.error).join('；')}</div>`;
+    inp.value = '';
+    await loadLibrary();
+    renderList(); renderDetail();
+  }
+
+  /* ===== 胶片库 ===== */
+  function renderFilmLib() {
+    const box = document.getElementById('filmLib');
+    if (!box) return;
+    // 胶片库 = 内置胶片 + 自建胶片，全部列出并标注 ΔE
+    const all = [
+      ...FILMS.filter(f => f.key !== 'lib:' + f.key).map(f => ({ builtin: true, f })),
+      ...LIB_FILMS.filter(lf => !FILMS.some(f => f.key === lf.key)).map(lf => ({ builtin: false, lf })),
+    ];
+    document.getElementById('libCount').textContent = all.length;
+    if (!all.length) {
+      box.innerHTML = '<div class="mini-note" style="color:var(--muted)">还没有胶片。</div>';
+      return;
+    }
+    let html = '';
+    all.forEach(item => {
+      if (item.builtin) {
+        const f = item.f;
+        html += `
+          <div class="lib-item">
+            ${boxHTML(f)}
+            <div style="flex:1;min-width:0">
+              <div class="lib-name">${f.name} <span class="mini-note" style="margin-left:4px">内置</span></div>
+              <div style="margin-top:4px">
+                <span class="de-tag ${deClass(f.de)}">ΔE ${f.de}</span>
+                
+              </div>
+            </div>
+          </div>`;
+      } else {
+        const f = item.lf;
+        const f2 = libToFilm(f);
+        const deCls = f.de < 1.8 ? 'de-good' : (f.de < 2.5 ? 'de-mid' : 'de-bad');
+        html += `
+          <div class="lib-item">
+            ${boxHTML(f2)}
+            <div style="flex:1;min-width:0">
+              <div class="lib-name">${f.name}</div>
+              <div style="margin-top:4px">
+                <span class="de-tag ${deCls}">ΔE ${f.de}</span>
+                ${f.gray && f.gray.length ? `<span class="mini-note mono" style="margin-left:6px">灰轴 ${grayFlag(f.gray)}</span>` : ''}
+              </div>
+            </div>
+            <div class="lib-actions">
+              <button class="btn btn-mini" onclick="renameFilm('${f.key}')">改名</button>
+              <button class="btn btn-mini btn-danger" onclick="deleteFilm('${f.key}')">删</button>
+            </div>
+          </div>`;
+      }
+    });
+    box.innerHTML = html;
+  }
+
+  function grayFlag(gray) {
+    const mid = gray.find(g => g.in === 0.5) || gray[Math.floor(gray.length / 2)];
+    if (!mid) return '—';
+    const rb = mid.rb;
+    if (rb > 0.97 && rb < 1.03) return '中性 ✓';
+    if (rb < 0.97) return '偏冷';
+    return '偏暖';
+  }
+
+  async function renameFilm(key) {
+    const f = LIB_FILMS.find(x => x.key === key);
+    const nn = prompt('新名字（机内菜单显示名）', f ? f.name : '');
+    if (!nn) return;
+    const ns = prompt('短码（图标大字，可留空）', f ? (f.short || '') : '');
+    try {
+      const d = await (await fetch('/film/rename', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, name: nn, nick: nn, short: ns || undefined }),
+      })).json();
+      if (!d.ok) throw new Error('改名失败');
+      await loadLibrary(); renderList(); renderDetail();
+    } catch (e) { alert('❌ ' + e.message); }
+  }
+
+  async function deleteFilm(key) {
+    const f = LIB_FILMS.find(x => x.key === key);
+    if (!confirm(`删除「${f ? f.name : key}」？`)) return;
+    try {
+      const d = await (await fetch('/film/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key }),
+      })).json();
+      if (!d.ok) throw new Error('删除失败');
+      await loadLibrary(); renderList(); renderDetail();
+    } catch (e) { alert('❌ ' + e.message); }
+  }
+
+  renderList();
+  renderDetail();
+  checkStatus();
+  loadLibrary();
+</script>
+</body>
+</html>

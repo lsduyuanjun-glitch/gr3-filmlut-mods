@@ -6,7 +6,10 @@
  Everyone is permitted to copy and distribute verbatim copies
  of this license document, but changing it is not allowed.
 
-Copyright (C) 2026 idontknownihil and Duccio (Du Yuanjun)
+Copyright (C) 2026 idontknownihil (upstream GR III firmware research, MIT-licensed)
+Copyright (C) 2026 Duccio (Du Yuanjun) — additions in this repository
+Duccio film fit data (work/films_v16/fits/duccio/, work/duccio/ and related) is NOT licensed under
+the GPL and remains all rights reserved.
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
