@@ -1,0 +1,14 @@
+MultiAxial probe round 1 - how to shoot (temporary firmware, flash films v2 back afterwards)
+
+1. Monitor: show hue_chart_<your monitor resolution>.png full screen (Samsung G81SF: 3840x2160), no other windows,
+   mouse cursor moved off the chart. Night Shift / True Tone off, HDR off, Eye Saver / dynamic brightness /
+   black equalizer off. Any normal picture mode is fine (accuracy doesn't matter, stability does).
+   Let the chart sit on screen ~1 min before the first shot.
+2. Room: dim, no lamp or window light falling on the screen (pitch dark not needed, just constant).
+3. Camera on a tripod or a stack of books, straight at the screen, chart filling most of the frame (all 4 white corner squares visible).
+4. Settings: M mode, ISO 200, f/5.6 (or so), shutter so the white squares are bright but not blinking (try 1/30). WB Daylight.
+   DR / highlight correction OFF, shadow correction OFF, clarity/shading 0. RAW+JPG. Focus slightly OFF (avoids moire). 2s self timer.
+5. Without moving the camera or changing exposure, take one shot in each Image Control, quickly:
+   Standard, Vivid, Positive Film, Negative Film, Retro, HDR Tone, Cross Processing, Standard again  (8 shots)
+   (the second Standard shows whether the screen dimmed during the series)
+6. Put the 8 RAW+JPG pairs in ~/dev/gr3-firmware/photo-ma1/

@@ -1,0 +1,18 @@
+Films v11 = v10 (five films, post-gamma matrix via the YCbCr matrix) with all five looks refitted for perceptual
+error (dE2000) instead of RGB error. Same modes and names as v10 (Bleach Bypass = Vision3 250D).
+(RAW NR off up to ISO 8000.) Standard, Monotone/Soft/Hard/Hi-Contrast B&W, Positive, Negative are unchanged.
+
+Flash work/films_v11/fwdc239b.bin (SHA-256 90691ea1...8c1b48ae).
+
+Optional firmware check (factory menu Script on, as before): copy work/films_v11/script/startup.ttl to the card as
+C:\script\startup.ttl, power on once -> C:\FW_V11.BIN (run-once marker C:\FWCHK11.TXT).
+
+Chart test (same setup as photo-v9):
+1. Monitor: hue_chart_3840x2160.png (or your resolution) full screen, Night Shift / True Tone / HDR off, room dim.
+2. Camera fixed, straight at the screen, all 4 white corner squares in frame.
+3. M mode, ISO 200, f/5.6, ~1/30, WB Daylight, DR / shadow correction OFF, clarity/shading 0, RAW+JPG,
+   focus slightly off, 2 s self-timer. Image Control parameters all at 0 (also for Bleach Bypass).
+4. Without moving anything, one shot each: Standard, Vivid (Ektar), Retro (Gold), HDR Tone (Pro 400H),
+   Cross Process (Portra), Bleach Bypass (Vision3 250D), Standard again.
+5. Put the 7 RAW+JPG pairs (+ FW_V11.BIN if made) in ~/dev/gr3-firmware/photo-v11/.
+Plus a few real scenes in each film mode if you like (skin, sky, foliage).

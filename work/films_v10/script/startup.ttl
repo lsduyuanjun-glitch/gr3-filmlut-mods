@@ -1,0 +1,9 @@
+; Which films firmware is running? Dumps the v10 code cave (0x536EF618, 0x380 bytes). Read only, runs once.
+filesearch 'C:\FWCHK10.TXT'
+if result = 1 then
+    exit
+endif
+filecreate fh 'C:\FWCHK10.TXT'
+fileclose fh
+sendln 'SYS_md 0x536EF618 -s 0x380 -f C:\FW_V10.BIN'
+exit

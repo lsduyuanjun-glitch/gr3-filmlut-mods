@@ -1,0 +1,13 @@
+Films v5 = v4 + RAW noise reduction off. Test: same shots before and after flashing (~5 min, no chart, no tripod).
+
+Settings for every shot: RAW+JPG, Standard, manual focus, High-ISO NR menu as you normally have it.
+Keep the same settings for both rounds.
+
+Round A - on your CURRENT firmware (v3 or v4, either is fine):
+  1. Dark frames: lay the camera face down on a table (lens touching nothing), M mode, f/2.8, 1/60 s,
+     ISO 200, ISO 1600, ISO 6400, ISO 25600  (4 shots)
+  2. Flat grey: full-screen mid-grey on the monitor (or a plain evenly lit wall), focus far off so it is a smooth blur,
+     P mode (camera picks shutter/aperture), at ISO 200, ISO 1600, ISO 6400, ISO 25600 (4 shots)
+Round B - flash work/films_v5/fwdc239b.bin, then repeat the same 8 shots.
+
+Put round A in ~/dev/gr3-firmware/photo-nr1/A/ and round B in ~/dev/gr3-firmware/photo-nr1/B/.

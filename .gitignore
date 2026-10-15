@@ -1,0 +1,19 @@
+# Firmware images, camera data and generated media stay local (Ricoh firmware is not redistributable;
+# photos, dumps and calibration files contain personal/camera-specific data).
+*.bin
+*.DNG
+*.JPG
+*.jpg
+*.png
+*.npy
+*.npz
+*.ADJ
+*.CAM
+*.DOM
+*.log
+*.cube
+work/fw/
+work/**/luts/
+__pycache__/
+*.pyc
+.DS_Store

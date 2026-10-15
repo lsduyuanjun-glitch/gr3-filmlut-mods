@@ -1,0 +1,20 @@
+GR III script probe 1 - read only, nothing in the camera is changed. ~10 minutes.
+
+Before: note which firmware is flashed (stock / films v4 / v6 / v7).
+
+1. Copy the folder `script` (with startup.ttl inside) to the SD card root. Keep 00078350.588 and DEVELOP.MOD
+   on the card. Remove any fwdc239b.bin. Free space needed: ~80 MB.
+2. Camera off. Hold MENU, switch on -> factory menu. FW Setting1: Script -> Enable. (Camera Mode can stay Debug.)
+   Switch off.
+3. Set the mode dial to P and pick Vivid (= Ektar) as image control, RAW+JPG.
+4. Switch on normally. Note what you see:
+   a) shooting screen comes up quickly -> within the next 60 s take ONE photo of anything colourful;
+   b) camera seems stuck at start-up -> just wait (up to ~3 minutes) without pressing anything.
+5. Wait ~3 minutes after switching on (the dumps take time; the card light may flicker). Switch off.
+6. Copy everything from the card root (P1_*.BIN, P1_*.TXT, PROBE1.TXT, P1LOG folder, log0.txt, the photo) to
+   ~/dev/gr3-firmware/script-probe1/ and tell me whether it was a) or b).
+
+The script runs only once (it stops if PROBE1.TXT exists). If anything goes wrong (freeze, reboot loop):
+take the card out, switch on - the camera starts normally without the card.
+
+Afterwards: factory menu -> Script: Disable, Camera Mode: Normal; delete the script folder from the card.

@@ -1,0 +1,15 @@
+CCA1 probe = films v7 + red/blue swap in the camera's second (post-gamma) colour matrix. TEMPORARY.
+~10 minutes. Afterwards reflash work/films_v7/fwdc239b.bin.
+
+1. Flash work/cca1_probe/fwdc239b.bin (SHA-256 7050586f...fc290d) like the other builds.
+2. Switch on and just look at the screen:
+   - colours look normal            -> CCA1 does nothing (or not in live view) - still do step 3
+   - red and blue swapped / weird   -> CCA1 is live
+3. Take two photos of something with clear red and blue (e.g. a red object next to a blue one), RAW+JPG:
+   one in Standard, one in Vivid (Ektar).
+4. Optional read-back (confirms what the camera loaded): put work/cca1_probe/script on the card (replaces the old
+   script folder; delete old P2_* files), keep 00078350.588 + DEVELOP.MOD, Script still Enabled. Switch on, take one
+   photo within 40 s, leave the camera on 3 minutes, switch off.
+5. Copy the photos (and P3_* files if you did step 4) to ~/dev/gr3-firmware/photo-cca1/ and tell me what the screen
+   looked like.
+6. Reflash work/films_v7/fwdc239b.bin.

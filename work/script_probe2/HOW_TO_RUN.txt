@@ -1,0 +1,13 @@
+GR III script probe 2 - read only. ~5 minutes. Needs ~75 MB free on the card.
+
+Probe 1 worked for stage 0 but never reached the 90 s point (no P1_S1GO.TXT), so this one writes a small
+heartbeat file every 10 s to show how long the script stays alive.
+
+1. On the card: delete the old `script` folder and the P1_* files, copy the new `script` folder
+   (keep 00078350.588 + DEVELOP.MOD). Script is still Enabled in the factory menu - nothing to change there.
+2. Camera: P mode, image control Vivid (Ektar), RAW+JPG.
+3. Switch on. Within the first 40 seconds take ONE colourful photo (anything with red/orange/skin is best).
+4. Then leave the camera ON and untouched (no menus, no playback) for 3 full minutes.
+   Don't let it auto-power-off: if the screen dims, half-press the shutter once.
+5. Switch off, copy everything from the card root (P2_* files, PROBE2.TXT, P2LOG folder, log0.txt, the photo
+   JPG+DNG) to ~/dev/gr3-firmware/script-probe2/.

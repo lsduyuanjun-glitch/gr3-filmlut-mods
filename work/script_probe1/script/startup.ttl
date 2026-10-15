@@ -1,0 +1,42 @@
+; GR III script probe 1 - read only. Runs once (PROBE1.TXT guard), then exits.
+; Stage 0: does the script run, does sendln reach the engineering shell (SYS_md writes files).
+; Stage 1: after a 90 s pause (shoot one photo meanwhile, if the camera is usable), dump RAM to find
+;          the image-tuning block of that shot.
+filesearch 'C:\PROBE1.TXT'
+if result = 1 then
+    exit
+endif
+filecreate fh 'C:\PROBE1.TXT'
+filewriteln fh 'stage 0 started'
+fileclose fh
+sendln 'SYS_buildinfo'
+sendln 'SYS_md 0x53D615D8 -s 0x40 -f C:\P1_NAME.BIN'
+sendln 'SYS_md 0x550375EC -s 0x8 -f C:\P1_BPTR.BIN'
+sendln 'SYS_md 0x53EF9720 -s 0xB40 -f C:\P1_BTAB.BIN'
+sendln 'SYS_mplt'
+sendln 'SYS_mpft'
+sendln 'SYS_md 0x55000000 -s 0x810000 -f C:\P1_RAM0.BIN'
+filecreate fh 'C:\P1_S0OK.TXT'
+filewriteln fh 'stage 0 done, waiting 90 s'
+fileclose fh
+mpause 90000
+filecreate fh 'C:\P1_S1GO.TXT'
+filewriteln fh 'stage 1 started'
+fileclose fh
+sendln 'SYS_md 0x55810000 -s 0x1000000 -f C:\P1_H1.BIN'
+filecreate fh 'C:\P1_H1OK.TXT'
+fileclose fh
+sendln 'SYS_md 0x56810000 -s 0x1000000 -f C:\P1_H2.BIN'
+filecreate fh 'C:\P1_H2OK.TXT'
+fileclose fh
+sendln 'SYS_md 0x57810000 -s 0x1000000 -f C:\P1_H3.BIN'
+filecreate fh 'C:\P1_H3OK.TXT'
+fileclose fh
+sendln 'SYS_md 0x58810000 -s 0x1000000 -f C:\P1_H4.BIN'
+filecreate fh 'C:\P1_H4OK.TXT'
+fileclose fh
+sendln 'SYS_copylog C:\P1LOG'
+filecreate fh 'C:\P1_DONE.TXT'
+filewriteln fh 'all done'
+fileclose fh
+exit

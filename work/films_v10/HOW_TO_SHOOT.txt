@@ -1,0 +1,18 @@
+Films v10 = v9 looks with the post-gamma 3x3 moved to where it really acts (the RGB->YCbCr matrix; CCA1 turned out to
+act before the gamma curves), plus a fifth film: Bleach Bypass -> Kodak Vision3 250D on 2383 print ("Vision3 250D").
+(RAW NR off up to ISO 8000.) Standard, Monotone/Soft/Hard/Hi-Contrast B&W, Positive, Negative are unchanged.
+
+Flash work/films_v10/fwdc239b.bin (SHA-256 88adfd79...b25f45e4).
+
+Optional firmware check (factory menu Script on, as before): copy work/films_v10/script/startup.ttl to the card as
+C:\script\startup.ttl, power on once -> C:\FW_V10.BIN (run-once marker C:\FWCHK10.TXT).
+
+Chart test (same setup as photo-v9):
+1. Monitor: hue_chart_3840x2160.png (or your resolution) full screen, Night Shift / True Tone / HDR off, room dim.
+2. Camera fixed, straight at the screen, all 4 white corner squares in frame.
+3. M mode, ISO 200, f/5.6, ~1/30, WB Daylight, DR / shadow correction OFF, clarity/shading 0, RAW+JPG,
+   focus slightly off, 2 s self-timer. Image Control parameters all at 0 (also for Bleach Bypass).
+4. Without moving anything, one shot each: Standard, Vivid (Ektar), Retro (Gold), HDR Tone (Pro 400H),
+   Cross Process (Portra), Bleach Bypass (Vision3 250D), Standard again.
+5. Put the 7 RAW+JPG pairs (+ FW_V10.BIN if made) in ~/dev/gr3-firmware/photo-v10/.
+Plus a few real scenes in each film mode if you like (skin, sky, foliage).

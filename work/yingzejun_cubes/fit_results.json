@@ -1,0 +1,38 @@
+[
+  {
+    "key": "portra400_yingzejun",
+    "name": "Kodak Portra 400",
+    "de": 1.61,
+    "source": "yingzejun"
+  },
+  {
+    "key": "5207_yingzejun",
+    "name": "Kodak 5207",
+    "de": 1.66,
+    "source": "yingzejun"
+  },
+  {
+    "key": "5219_yingzejun",
+    "name": "Kodak 5219",
+    "de": 1.81,
+    "source": "yingzejun"
+  },
+  {
+    "key": "ektar100_yingzejun",
+    "name": "Kodak Ektar 100",
+    "de": 1.89,
+    "source": "yingzejun"
+  },
+  {
+    "key": "duccio5207_old",
+    "name": "本地旧版 5207",
+    "de": 1.55,
+    "source": "old"
+  },
+  {
+    "key": "duccio5219_old",
+    "name": "本地旧版 5219",
+    "de": 1.73,
+    "source": "old"
+  }
+]

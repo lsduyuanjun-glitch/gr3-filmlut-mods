@@ -1,0 +1,30 @@
+Films v16 = v15 + hue-sector colour correction (MultiAxial) for every film (FINDINGS §33):
+  * the seven film emulations refitted with 12 hue-sector matrices (matrix, post matrix and curves refitted with them)
+  * Cinema (Yellow)/(Green) get the GR IV's own hue-sector tables (the part v15 left out)
+  * Standard and every stock mode are unchanged (their hue sectors stay off, checked in emulation)
+Menus, icons, sliders and movie list are exactly as in v15.
+Also fixed: playback RAW development with films (broken since v13, FINDINGS §34).
+
+Flash work/films_v16/fwdc239b.bin (SHA-256 9d81366c26281b726ef733d681bbbf2df3febbc438a1967ce254ae997faf6d71).
+Only for a GR III WITHOUT HDF. Coming from v15 nothing needs to be switched away first.
+
+1. Quick look: each film and Standard in live view. Standard must look exactly as before. Films: same character as
+   v15, with hue-specific differences (most visible on Classic Neg, Vision3 500T and the two Cinema modes).
+   Any speckle / salt-and-pepper noise on grey areas = bad (that was the probe-5 marker effect) -> stop and report.
+2. Hue chart (work/films_v16/hue_chart_<res>.png full screen, as for the probes): tripod, M mode, ISO 200, f/5.6,
+   ~1/30, WB Daylight, DR/highlight/shadow correction off, clarity/shading 0, RAW+JPG, focus slightly off.
+   One shot each: Standard, Portra 400, Ektar 100, Gold 200, Pro 400H, Vision3 250D, Classic Neg,
+   Cinema (Yellow), Cinema (Green), Vision3 500T, Standard again.  -> ~/dev/gr3-firmware/photo-v16/
+3. A real scene (skin, sky, foliage if you can): the same scene in Standard + a few films, RAW+JPG -> photo-v16/
+4. Movie: one short clip in Cinema (Yellow) or Vision3 500T (hue sectors also run in live view; the movie
+   recording path is still not emulated).
+5. Playback RAW development (the fix):
+   a. A RAW shot in Standard: RAW development -> Image Control: the list must show the six films between Vision3 500T
+      and the '1'/'2' develop-setting entries (builds before 9d81366c went straight from 500T to '1') -> pick Portra 400, then Cinema (Yellow), then
+      Vision3 500T: the preview should change each time and the list should keep the film selected; develop one.
+   b. A RAW shot in a film WITH THIS BUILD (older shots carry 'Standard' in the file and stay Standard): open RAW
+      development - 'as shot' should show/develop that film. (exiftool now shows ImageTone 268-276 for film shots.)
+   c. Open the slider page for a film in RAW development: no freeze; sliders start from the shot's own values.
+   If anything freezes or reverts to Standard, note which step.
+6. Optional (white balance question, FINDINGS §32): ColorChecker or the hue chart under a tungsten lamp, Standard,
+   AWB, RAW+JPG -> photo-v16/tungsten/.

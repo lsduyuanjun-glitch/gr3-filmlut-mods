@@ -1,0 +1,36 @@
+; GR III script probe 2 - read only. Runs once (PROBE2.TXT guard).
+; Writes a heartbeat file every 10 s (shows whether the script keeps running while you shoot),
+; dumps RAM 60 s after start (the photo's image-tuning block), copies the log at the end.
+filesearch 'C:\PROBE2.TXT'
+if result = 1 then
+    exit
+endif
+filecreate fh 'C:\PROBE2.TXT'
+filewriteln fh 'started'
+fileclose fh
+sendln 'SYS_mplt'
+sendln 'SYS_mpft'
+i = 0
+while i < 15
+    mpause 10000
+    i = i + 1
+    sprintf2 fn 'C:\P2_T%02d.TXT' i
+    filecreate fh fn
+    fileclose fh
+    if i = 6 then
+        sendln 'SYS_md 0x55000000 -s 0x810000 -f C:\P2_RAM0.BIN'
+        sendln 'SYS_md 0x55810000 -s 0x16F0000 -f C:\P2_HA.BIN'
+        filecreate fh 'C:\P2_HAOK.TXT'
+        fileclose fh
+        sendln 'SYS_md 0x56F00000 -s 0x1100000 -f C:\P2_HB.BIN'
+        filecreate fh 'C:\P2_HBOK.TXT'
+        fileclose fh
+        sendln 'SYS_md 0x58800000 -s 0x1600000 -f C:\P2_HC.BIN'
+        filecreate fh 'C:\P2_HCOK.TXT'
+        fileclose fh
+    endif
+endwhile
+sendln 'SYS_copylog C:\P2LOG'
+filecreate fh 'C:\P2_DONE.TXT'
+fileclose fh
+exit

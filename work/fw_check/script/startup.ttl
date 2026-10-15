@@ -1,0 +1,9 @@
+; Which films firmware is running? Dumps the CCA1 table (v8/v9 differ) and the look matrices. Read only, runs once.
+filesearch 'C:\FWCHECK.TXT'
+if result = 1 then
+    exit
+endif
+filecreate fh 'C:\FWCHECK.TXT'
+fileclose fh
+sendln 'SYS_md 0x536EF618 -s 0x120 -f C:\FW_CCA1.BIN'
+exit

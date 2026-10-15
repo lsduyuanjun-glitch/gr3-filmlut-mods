@@ -1,0 +1,116 @@
+name: Build release packages
+
+# 在推送 tag（如 v1.0.0）或手动触发时，为 macOS 和 Windows 各打一份可移动文件夹 zip。
+# 因为本工具是「运行时动态 import 引擎 .py + subprocess 调用子脚本」的架构，
+# 不适合 PyInstaller 单文件打包，故采用「可移动文件夹」形式：解压即用，需自装 Python 3。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install capstone numpy pillow scipy unicorn==2.1.4
+
+      - name: Assemble package folder
+        shell: bash
+        run: |
+          set -e
+          # 组装可移动文件夹结构（与本地 pack.py 一致）
+          OUT="GR3胶片工具"
+          rm -rf "$OUT"
+          mkdir -p "$OUT/engine" "$OUT/official_firmware"
+
+          # 1) 引擎：把 gr3-film-mods 的 .py + 数据目录拷进 engine/
+          #    排除开发/测试脚本与固件产物
+          for f in *.py; do
+            case "$f" in
+              server.py|build_firmware.py|film_library.py|safety_check.py) ;;
+              *) cp "$f" "$OUT/engine/" ;;
+            esac
+          done
+          for d in third_party work/films_v16 work/ma_probe5 work/films work/films_v3 work/films_v4 work/duccio; do
+            [ -d "$d" ] && cp -R "$d" "$OUT/engine/$d"
+          done
+          cp film_library.json "$OUT/engine/" 2>/dev/null || true
+          [ -f work/base_gamma_std.npy ] && cp work/base_gamma_std.npy "$OUT/engine/work/" || true
+
+          # 2) 工具本体（来自 outputs/gr3/gr3-flash-tool，若本仓库包含则用本仓库的）
+          TOOL=outputs/gr3/gr3-flash-tool
+          if [ -f "$TOOL/server.py" ]; then
+            cp "$TOOL/server.py" "$OUT/"
+            cp "$TOOL/index.html" "$OUT/"
+            cp "$TOOL/build_firmware.py" "$OUT/"
+            cp "$TOOL/film_library.py" "$OUT/"
+            [ -f "$TOOL/启动工具.command" ] && cp "$TOOL/启动工具.command" "$OUT/"
+            [ -f "$TOOL/启动工具.bat" ] && cp "$TOOL/启动工具.bat" "$OUT/"
+          fi
+
+          # 3) 引导文件
+          echo "请从理光官网下载 GR III 2.10 官方固件 fwdc239b.bin 放到本文件夹。" > "$OUT/official_firmware/请把官方固件放这里.txt"
+          printf 'numpy\nscipy\npillow\ncapstone\nunicorn==2.1.4\n' > "$OUT/requirements.txt"
+
+          # 4) 许可与源码
+          cp LICENSE "$OUT/" 2>/dev/null || true
+          cp -R LICENSES "$OUT/" 2>/dev/null || true
+          cp README.md "$OUT/" 2>/dev/null || true
+          cp README.zh-CN.md "$OUT/" 2>/dev/null || true
+
+          echo "--- package folder assembled ---"
+          find "$OUT" -maxdepth 2 -type d | sort
+
+      - name: Zip package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd "$OUT" 2>/dev/null || cd GR3胶片工具
+          zip -r "../GR3胶片工具-macOS.zip" . -x "*.DS_Store"
+          echo "artifact=GR3胶片工具-macOS.zip" >> "$GITHUB_ENV"
+
+      - name: Zip package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd "GR3胶片工具"
+          zip -r "../GR3胶片工具-Windows.zip" . -x "*.DS_Store"
+          echo "artifact=GR3胶片工具-Windows.zip" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GR3胶片工具-${{ matrix.os }}
+          path: ${{ env.artifact }}
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

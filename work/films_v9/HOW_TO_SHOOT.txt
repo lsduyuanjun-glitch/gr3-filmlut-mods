@@ -1,0 +1,15 @@
+Films v9 = v8 with all three colour stages (look matrix, film curves, post-gamma 3x3) refitted together.
+(RAW NR off up to ISO 8000.) Standard and all other modes are unchanged.
+
+Flash work/films_v9/fwdc239b.bin (SHA-256 0bc9c8eb...19624d28b).
+
+Chart test (~10 min, same setup as photo-ma5):
+1. Monitor: show hue_chart_3840x2160.png (or your resolution) full screen. Night Shift / True Tone / HDR / eye saver off.
+   Let it sit ~1 min. Room dim, no light on the screen.
+2. Camera on a tripod or books, straight at the screen, all 4 white corner squares in frame.
+3. M mode, ISO 200, f/5.6, ~1/30 (white squares bright, not blinking), WB Daylight, DR / shadow correction OFF,
+   clarity/shading 0, RAW+JPG, focus slightly off, 2 s self-timer.
+4. Without moving anything, one shot each: Standard, Vivid (Ektar), Retro (Gold), HDR Tone (Pro 400H),
+   Cross Process (Portra), Standard again.
+5. Put the 6 RAW+JPG pairs in ~/dev/gr3-firmware/photo-v9/.
+Plus the same hand shots as before (Standard, Vivid, Cross), same light.
