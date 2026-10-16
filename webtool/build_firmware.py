@@ -23,9 +23,17 @@ _TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 def _resolve_repo():
     if os.environ.get('GR3_REPO'):
         return os.environ['GR3_REPO']
+    # PyInstaller 打包：引擎 .py 平铺在 _TOOL_DIR 本身（datas 平铺到根）
+    if os.path.exists(os.path.join(_TOOL_DIR, 'make_slots15.py')):
+        return _TOOL_DIR
     bundled = os.path.join(_TOOL_DIR, 'engine')
     if os.path.isdir(bundled) and os.path.exists(os.path.join(bundled, 'make_slots15.py')):
         return bundled
+    # 仓库结构：引擎代码在 webtool/ 的上一级（仓库根），直接回溯向上找，不依赖仓库名
+    for up in range(1, 5):
+        cand = os.path.abspath(os.path.join(_TOOL_DIR, *(['..'] * up)))
+        if os.path.isdir(cand) and os.path.exists(os.path.join(cand, 'make_slots15.py')):
+            return cand
     for up in (3, 4, 2):
         dev = os.path.abspath(os.path.join(_TOOL_DIR, *(['..'] * up), 'gr3-film-mods'))
         if os.path.isdir(dev) and os.path.exists(os.path.join(dev, 'make_slots15.py')):
@@ -62,6 +70,120 @@ def load_film(name):
     de = d.get('lab_fit', {}).get('after', {}).get('colorchecker',
          d.get('presets', [{}])[0].get('chart_de_mean', 0))
     return d, round(float(de), 2)
+
+
+def build(in_path, out_path, films_order=None, raw_nr_above=8000,
+          grain=None, grain_native=False):
+    """核心构建逻辑（可 import，供 server.py 进程内调用）。
+
+    返回 result dict；出错时 raise（带明确信息）。不依赖 sys.argv / print / sys.exit。
+    """
+    films_order = list(films_order or FILMS_ORDER)
+
+    if not in_path or not out_path:
+        raise ValueError('缺少输入/输出路径')
+
+    # 先把输入/输出路径转成绝对路径，避免 os.chdir(REPO) 后相对路径失效
+    in_path = os.path.abspath(in_path)
+    out_path = os.path.abspath(out_path)
+
+    prev_cwd = os.getcwd()
+    os.chdir(REPO)
+    try:
+        import make_slots15 as M15
+        import make_slots16 as M16
+
+        # 校验固件 SHA
+        sha = hashlib.sha256(open(in_path, 'rb').read()).hexdigest()
+        expected = 'd6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4'
+        if sha != expected:
+            raise ValueError(f'固件不匹配！期望 GR III 2.10 (fwdc239b.bin)，实际 SHA {sha[:16]}...')
+
+        # 构造 films 列表：(key, display_name, fit, replaced_stock_tone_or_None)
+        films = []
+        summary = []
+        for key in films_order:
+            fit, de, film_cn = None, 0.0, key
+            if key in FILMS:
+                fit, de = load_film(key)
+                film_cn = FILM_NAME.get(key, key)
+            else:
+                # 自建胶片：从胶片库取 fit 路径
+                lib_path = os.path.join(REPO, 'film_library.json')
+                if not os.path.exists(lib_path):
+                    raise ValueError(f'未知胶片 {key}（且无胶片库）')
+                lib = json.load(open(lib_path))
+                entry = lib.get('films', {}).get(key)
+                if not entry:
+                    raise ValueError(f'未知胶片 {key}')
+                fit = json.load(open(os.path.join(REPO, entry['fit'])))
+                de = round(float(entry.get('de', 0)), 2)
+                film_cn = entry.get('nick') or entry.get('name') or key
+                if 'hue_q10' not in fit:
+                    fit['hue_q10'] = [[[1024, 0, 0], [0, 1024, 0], [0, 0, 1024]] for _ in range(12)]
+                M15.FILMS[key] = film_cn
+                import re as _re
+                _ascii = lambda _s: _re.sub(r'[^A-Za-z0-9]', '', _s or '')
+                _cand = _ascii(entry.get('short')) or _ascii(film_cn) or _ascii(key) or 'CSTM'
+                M15.ICON_LABELS[key] = (_cand[:4].upper(), (200, 190, 175))
+            display_name = M15.FILMS[key]
+            films.append((key, display_name, fit, None))
+            summary.append({'film': key, 'film_cn': film_cn, 'deltaE': de})
+
+        # 执行 v16 patch
+        from gr3patch import Image
+        img = Image(in_path)
+        if grain_native:
+            img._grain_ext = img.grow(64 * 1024)
+            img._grain_ext_cur = img._grain_ext
+        info = M15.patch(img, films, raw_nr_above=raw_nr_above)
+        info['_multiaxial'] = M16.patch_ma(img, films)
+        info['_rawdev'] = M16.patch_rawdev(img, films, info)
+        info['_exif_tone'] = M16.patch_exif_tone(img, films)
+
+        if grain_native:
+            import make_grain_native
+            info['_grain_storage'] = make_grain_native.patch_storage(img, films, info)
+            info['_grain_pipeline'] = make_grain_native.patch_pipeline(img, films, info)
+            info['_grain_gate'] = make_grain_native.patch_gate(img, films, info)
+            info['_grain_menu'] = make_grain_native.patch_menu(img, films, info)
+
+        if grain is not None:
+            import make_grain
+            grain_specs = {m: {'strength': grain, 'type': grain}
+                           for m in make_grain.STRENGTH_ADDR}
+            info['_grain'] = make_grain.patch_grain(img, grain_specs)
+
+        data, rep = img.build()
+        open(out_path, 'wb').write(data)
+
+        changed = []
+        for idx, (key, name, fit, repl) in enumerate(films):
+            changed.append({
+                'slot': key, 'slot_cn': name, 'film': key,
+                'film_cn': FILM_NAME.get(key, name),
+                'deltaE': summary[idx]['deltaE'],
+                'camera_name': name, 'tone': 25 + idx,
+            })
+
+        return {
+            'ok': True,
+            'output': out_path,
+            'output_size': len(data),
+            'changed': changed,
+            'slots': summary,
+            'multiaxial': info.get('_multiaxial'),
+            'rawdev': info.get('_rawdev'),
+            'grain': info.get('_grain'),
+            'grain_native': info.get('_grain_gate'),
+            'grain_pipeline': info.get('_grain_pipeline'),
+            'grain_storage': info.get('_grain_storage'),
+            'grain_menu': info.get('_grain_menu'),
+            'repack': rep,
+            'warnings': [],
+        }
+    finally:
+        os.chdir(prev_cwd)
 
 
 def main():
@@ -104,120 +226,13 @@ def main():
         print(json.dumps({'error': '用法: build_firmware.py <官方.bin> <输出.bin>'}))
         sys.exit(1)
 
-    # 先把输入/输出路径转成绝对路径，避免 os.chdir(REPO) 后相对路径失效
-    in_path = os.path.abspath(in_path)
-    out_path = os.path.abspath(out_path)
-
-    os.chdir(REPO)
-    import make_slots15 as M15
-    import make_slots16 as M16
-
-    # 校验固件 SHA
-    sha = hashlib.sha256(open(in_path, 'rb').read()).hexdigest()
-    expected = 'd6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4'
-    if sha != expected:
-        print(json.dumps({'error': f'固件不匹配！期望 GR III 2.10 (fwdc239b.bin)，实际 SHA {sha[:16]}...'}))
+    try:
+        result = build(in_path, out_path, films_order=films_order,
+                       raw_nr_above=raw_nr_above, grain=grain,
+                       grain_native=grain_native)
+    except Exception as e:
+        print(json.dumps({'error': str(e)}))
         sys.exit(1)
-
-    # 构造 films 列表：(key, display_name, fit, replaced_stock_tone_or_None)
-    # 注意：display_name 必须用 make_slots15.FILMS[key]（英文菜单名），
-    # 因为 verify_slots16 校验 string getter 时按 M.FILMS[key] 比对，
-    # 且机内字符串表是 UTF-16LE，中文全角括号会导致校验失败。
-    films = []
-    summary = []
-    for key in films_order:
-        fit, de, film_cn = None, 0.0, key
-        if key in FILMS:
-            fit, de = load_film(key)
-            film_cn = FILM_NAME.get(key, key)
-        else:
-            # 自建胶片：从胶片库取 fit 路径
-            lib_path = os.path.join(REPO, 'film_library.json')
-            if not os.path.exists(lib_path):
-                print(json.dumps({'error': f'未知胶片 {key}（且无胶片库）'})); sys.exit(1)
-            lib = json.load(open(lib_path))
-            entry = lib.get('films', {}).get(key)
-            if not entry:
-                print(json.dumps({'error': f'未知胶片 {key}'})); sys.exit(1)
-            fit = json.load(open(os.path.join(REPO, entry['fit'])))
-            de = round(float(entry.get('de', 0)), 2)
-            film_cn = entry.get('nick') or entry.get('name') or key
-            # v16 需要 hue_q10（12 分区色相）；旧 v11 fit 缺它时注入中性恒等矩阵，向后兼容
-            if 'hue_q10' not in fit:
-                fit['hue_q10'] = [[[1024, 0, 0], [0, 1024, 0], [0, 0, 1024]] for _ in range(12)]
-            # 自建胶片 key 动态注册进 M15 注册表（双保险；make_slots15._load_custom_films 已自动加载，
-            # 这里确保 build 进程内 display_name = M15.FILMS[key] 一定取到值）
-            M15.FILMS[key] = film_cn
-            import re as _re
-            _ascii = lambda _s: _re.sub(r'[^A-Za-z0-9]', '', _s or '')
-            _cand = _ascii(entry.get('short')) or _ascii(film_cn) or _ascii(key) or 'CSTM'
-            # 无专属图标 → 简单框 + 命名（ASCII 短码 + 暖灰中性色，与 make_slots15 一致）
-            M15.ICON_LABELS[key] = (_cand[:4].upper(), (200, 190, 175))
-        # display_name 必须用 make_slots15.FILMS[key]（verify 按 M.FILMS[key] 比对）
-        display_name = M15.FILMS[key]
-        films.append((key, display_name, fit, None))
-        summary.append({'film': key, 'film_cn': film_cn, 'deltaE': de})
-
-    # 执行 v16 patch（v15 新增影像控制项 + 12分区色相 + RAW显影兼容 + maker-note）
-    from gr3patch import Image
-    img = Image(in_path)
-    # 原生颗粒菜单需要扩容 RTOS（grow 必须在任何 patch 之前，此时 decoded checksum 仍有效）
-    if grain_native:
-        img._grain_ext = img.grow(64 * 1024)
-        img._grain_ext_cur = img._grain_ext
-    info = M15.patch(img, films, raw_nr_above=raw_nr_above)
-    info['_multiaxial'] = M16.patch_ma(img, films)
-    info['_rawdev'] = M16.patch_rawdev(img, films, info)
-    info['_exif_tone'] = M16.patch_exif_tone(img, films)
-
-    # 原生颗粒引擎（Particle）：让胶片（tone 25+）复用机内「颗粒效果」菜单 + 启用 effect-stage
-    # 这是作者 v27-v30 路线的逆向重实现（FINDINGS §45-48）。gate 修复(③)先接，①②随 make_grain_native 补全。
-    if grain_native:
-        import make_grain_native
-        info['_grain_storage'] = make_grain_native.patch_storage(img, films, info)
-        info['_grain_pipeline'] = make_grain_native.patch_pipeline(img, films, info)
-        info['_grain_gate'] = make_grain_native.patch_gate(img, films, info)
-        info['_grain_menu'] = make_grain_native.patch_menu(img, films, info)
-
-    # 机内颗粒（strength × type 双档）：把理光机内颗粒拉满
-    # 只 patch standard（4 款胶片走的模式），但为保险同时拉满全部 7 个模式
-    if grain is not None:
-        import make_grain
-        grain_specs = {m: {'strength': grain, 'type': grain}
-                       for m in make_grain.STRENGTH_ADDR}
-        info['_grain'] = make_grain.patch_grain(img, grain_specs)
-
-    data, rep = img.build()
-    open(out_path, 'wb').write(data)
-
-    changed = []
-    for idx, (key, name, fit, repl) in enumerate(films):
-        changed.append({
-            'slot': key,
-            'slot_cn': name,
-            'film': key,
-            'film_cn': FILM_NAME.get(key, name),
-            'deltaE': summary[idx]['deltaE'],
-            'camera_name': name,
-            'tone': 25 + idx,
-        })
-
-    result = {
-        'ok': True,
-        'output': out_path,
-        'output_size': len(data),
-        'changed': changed,
-        'slots': summary,
-        'multiaxial': info.get('_multiaxial'),
-        'rawdev': info.get('_rawdev'),
-        'grain': info.get('_grain'),
-        'grain_native': info.get('_grain_gate'),
-        'grain_pipeline': info.get('_grain_pipeline'),
-        'grain_storage': info.get('_grain_storage'),
-        'grain_menu': info.get('_grain_menu'),
-        'repack': rep,
-        'warnings': [],
-    }
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

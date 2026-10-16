@@ -13,8 +13,18 @@ box 字段扁平化存储图标配色：
 import os, json, time, hashlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# 库文件固定存在 repo 目录（fit/cube 也都在那里），保证 server 与 build 读写同一份
-REPO_DIR = '/Users/macmini/WorkBuddy/2026-10-09-16-58-16/gr3-film-mods'
+# 库文件固定存在 repo 目录（fit/cube 也都在那里），保证 server 与 build 读写同一份。
+# 路径推导优先级：环境变量 > 本文件所在目录（打包后 engine 数据目录）> 上一级（仓库根）。
+def _repo_dir():
+    if os.environ.get('GR3_REPO'):
+        return os.environ['GR3_REPO']
+    for up in range(0, 4):
+        cand = os.path.abspath(os.path.join(HERE, *(['..'] * up)))
+        if os.path.exists(os.path.join(cand, 'make_slots15.py')) or os.path.exists(os.path.join(cand, 'film_library.json')):
+            return cand
+    return HERE
+
+REPO_DIR = _repo_dir()
 LIB_PATH = os.environ.get('FILM_LIB_PATH', os.path.join(REPO_DIR, 'film_library.json'))
 
 WHITE = (255, 255, 255)
@@ -122,7 +132,7 @@ def film_to_box_tuple(flat_box):
 def inject_into_filmbox():
     """把库里的胶片动态注入 make_icons_custom.FILM_BOX，返回注入的 key 列表。"""
     import sys
-    sys.path.insert(0, '/Users/macmini/WorkBuddy/2026-10-09-16-58-16/gr3-film-mods')
+    sys.path.insert(0, REPO_DIR)
     import make_icons_custom as mic
     injected = []
     for f in list_films():

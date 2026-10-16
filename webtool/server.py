@@ -11,12 +11,38 @@ import os, sys, json, subprocess, base64, tempfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
 
-TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
+# —— PyInstaller 打包运行时目录解析 ——
+# onedir 模式下，数据文件解到 sys.executable 同级的 _internal/ 目录；
+# onefile 模式下解到 sys._MEIPASS。这里统一取「能定位到引擎代码的根目录」。
+def _bundle_root():
+    if getattr(sys, 'frozen', False):
+        # 打包环境：优先 _MEIPASS（onefile 解压目录），否则 executable 所在目录
+        base = getattr(sys, '_MEIPASS', None) or os.path.dirname(sys.executable)
+        # PyInstaller 5+ 把 datas 放进 _internal
+        internal = os.path.join(os.path.dirname(sys.executable), '_internal')
+        for cand in (base, internal):
+            if os.path.exists(os.path.join(cand, 'make_slots15.py')):
+                return cand
+        return base
+    return None
+
+_BUNDLE = _bundle_root()
+
+TOOL_DIR = _BUNDLE or os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, TOOL_DIR)
+try:
+    import license as _lic
+except ImportError:
+    _lic = None
 
 # —— 可移植路径解析 ——
 # 引擎代码（gr3-film-mods 的 make_slots15/16、make_grain_native、gr3patch 等）放在本目录下的 engine/。
 # 打包时把 gr3-film-mods 整个拷到 engine/ 即可，工具目录可整体移动、跨机器运行。
 def _resolve_repo():
+    # 0) 打包环境：引擎 .py 平铺在 TOOL_DIR（_internal）根目录
+    if getattr(sys, 'frozen', False):
+        if os.path.exists(os.path.join(TOOL_DIR, 'make_slots15.py')):
+            return TOOL_DIR
     # 1) 环境变量显式指定（调试/自定义用）
     if os.environ.get('GR3_REPO'):
         return os.environ['GR3_REPO']
@@ -24,7 +50,13 @@ def _resolve_repo():
     bundled = os.path.join(TOOL_DIR, 'engine')
     if os.path.isdir(bundled) and os.path.exists(os.path.join(bundled, 'make_slots15.py')):
         return bundled
-    # 3) 开发结构：仓库内的 gr3-film-mods（仓库内开发时）
+    # 3) 仓库结构：引擎代码在 webtool/ 的上一级目录（仓库根，如 gr3-filmlut-mods/）
+    #    直接回溯向上找含 make_slots15.py 的目录，不依赖仓库具体名字
+    for up in range(1, 5):
+        cand = os.path.abspath(os.path.join(TOOL_DIR, *(['..'] * up)))
+        if os.path.isdir(cand) and os.path.exists(os.path.join(cand, 'make_slots15.py')):
+            return cand
+    # 4) 兼容旧名 gr3-film-mods（历史开发结构）
     for up in (3, 4, 2):
         dev = os.path.abspath(os.path.join(TOOL_DIR, *(['..'] * up), 'gr3-film-mods'))
         if os.path.isdir(dev) and os.path.exists(os.path.join(dev, 'make_slots15.py')):
@@ -106,6 +138,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == '/film/list':
             # 前端 loadLibrary() 用 GET 请求，必须放在 do_GET（此前误放 do_POST，导致自建胶片永远加载不出来）
             self._handle_film_list()
+        elif path == '/license/status':
+            self._handle_license_status()
         elif path.endswith('.bin'):
             # 支持 official_firmware/ 子目录里的官方固件下载
             rel = path.lstrip('/')
@@ -171,36 +205,26 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_film_rename(data)
         elif path == '/film/delete':
             self._handle_film_delete(data)
+        elif path == '/license/apply':
+            self._handle_license_apply(data)
         else:
             self._send(404, json.dumps({'error': 'not found'}))
 
     def _handle_film_list(self):
-        r = subprocess.run([VENV_PY, '-c',
-            f"import sys; sys.path.insert(0,'{TOOL_DIR}'); import film_library as fl; "
-            f"import json; print(json.dumps(fl.list_films(), ensure_ascii=False))"],
-            capture_output=True, text=True, timeout=15, cwd=TOOL_DIR)
         try:
-            films = json.loads(r.stdout.strip())
+            import film_library as fl
+            films = fl.list_films()
         except Exception:
             films = []
         self._send(200, json.dumps({'ok': True, 'films': films}))
 
     def _save_film_to_library(self, result, name, short):
         """把 run_film 的结果写入胶片库，返回保存后的胶片。"""
-        # 注意：result 必须以「JSON 字符串字面量」嵌入 -c 代码，
-        # 直接嵌 dict 文本会让 json.loads 收到 dict 而报 TypeError（此前入库静默失败的根因）
-        payload = json.dumps(json.dumps(result, ensure_ascii=False))
-        r2 = subprocess.run([VENV_PY, '-c',
-            f"import sys, json; sys.path.insert(0,'{TOOL_DIR}'); import film_library as fl; "
-            f"f = fl.add_film(json.loads({payload}), nick={json.dumps(name, ensure_ascii=False)}, "
-            f"short={json.dumps(short or name, ensure_ascii=False)}); "
-            f"print(json.dumps(f, ensure_ascii=False))"],
-            capture_output=True, text=True, timeout=15, cwd=TOOL_DIR)
         try:
-            return json.loads(r2.stdout.strip())
-        except Exception:
-            # 入库失败不再静默：把 stderr 带回去便于排查
-            result['_lib_err'] = (r2.stderr or '')[-500:]
+            import film_library as fl
+            return fl.add_film(result, nick=name, short=(short or name))
+        except Exception as e:
+            result['_lib_err'] = str(e)[-500:]
             return result
 
     def _handle_film_create_from_xmp(self, data):
@@ -228,33 +252,19 @@ class Handler(BaseHTTPRequestHandler):
         import hashlib as _hl
         key = 'duccio_' + _hl.md5(name.encode()).hexdigest()[:8]
 
-        # 注意：box_spec 里的 body/strip/brand_c 等必须是真实 list/tuple，不能 str(list(...))
-        # 否则 film_library.add_film 展平时会把字符串拆成字符列表，污染 box 数据
         box_spec = (list(body), list(strip), brand_c, box_name, name_c, speed, speed_c)
 
-        code = (
-            f"import sys, json; sys.path.insert(0,'{REPO}'); sys.path.insert(0,'{TOOL_DIR}'); "
-            f"import film_pipeline as fp; "
-            f"res = fp.run_film_from_xmp('{tmp.name}', '{key}', {json.dumps(name, ensure_ascii=False)}, "
-            f"({list(body)}, {list(strip)}, {repr(brand_c)}, {json.dumps(box_name, ensure_ascii=False)}, "
-            f"{repr(name_c)}, {json.dumps(speed, ensure_ascii=False)}, {repr(speed_c)}), '{CUBE_DIR}'); "
-            f"print(json.dumps(res, ensure_ascii=False))"
-        )
         try:
-            r = subprocess.run([VENV_PY, '-c', code], capture_output=True, text=True, timeout=300)
+            import film_pipeline as fp
+            result = fp.run_film_from_xmp(tmp.name, key, name, box_spec, CUBE_DIR)
+        except Exception as e:
+            self._send(500, json.dumps({'error': 'XMP 解析/拟合失败', 'stderr': str(e)[-2000:]}))
+            return
         finally:
             try:
                 os.unlink(tmp.name)
             except Exception:
                 pass
-        if r.returncode != 0:
-            self._send(500, json.dumps({'error': 'XMP 解析/拟合失败', 'stderr': r.stderr[-2000:]}))
-            return
-        try:
-            result = json.loads(r.stdout.strip())
-        except Exception:
-            self._send(500, json.dumps({'error': '解析失败', 'raw': r.stdout[-2000:]}))
-            return
         saved = self._save_film_to_library(result, name, short)
         if saved.get('_lib_err'):
             self._send(500, json.dumps({'error': '拟合成功但入库失败', 'stderr': saved['_lib_err']}))
@@ -289,29 +299,17 @@ class Handler(BaseHTTPRequestHandler):
 
         box_spec = (list(body), list(strip), brand_c, box_name, name_c, speed, speed_c)
 
-        code = (
-            f"import sys, json; sys.path.insert(0,'{REPO}'); sys.path.insert(0,'{TOOL_DIR}'); "
-            f"import film_pipeline as fp; "
-            f"res = fp.run_film_from_cube('{tmp.name}', '{key}', {json.dumps(name, ensure_ascii=False)}, "
-            f"({list(body)}, {list(strip)}, {repr(brand_c)}, {json.dumps(box_name, ensure_ascii=False)}, "
-            f"{repr(name_c)}, {json.dumps(speed, ensure_ascii=False)}, {repr(speed_c)}), '{CUBE_DIR}'); "
-            f"print(json.dumps(res, ensure_ascii=False))"
-        )
         try:
-            r = subprocess.run([VENV_PY, '-c', code], capture_output=True, text=True, timeout=300)
+            import film_pipeline as fp
+            result = fp.run_film_from_cube(tmp.name, key, name, box_spec, CUBE_DIR)
+        except Exception as e:
+            self._send(500, json.dumps({'error': 'cube 拟合失败', 'stderr': str(e)[-2000:]}))
+            return
         finally:
             try:
                 os.unlink(tmp.name)
             except Exception:
                 pass
-        if r.returncode != 0:
-            self._send(500, json.dumps({'error': 'cube 拟合失败', 'stderr': r.stderr[-2000:]}))
-            return
-        try:
-            result = json.loads(r.stdout.strip())
-        except Exception:
-            self._send(500, json.dumps({'error': '解析失败', 'raw': r.stdout[-2000:]}))
-            return
         saved = self._save_film_to_library(result, name, short)
         if saved.get('_lib_err'):
             self._send(500, json.dumps({'error': '拟合成功但入库失败', 'stderr': saved['_lib_err']}))
@@ -326,15 +324,9 @@ class Handler(BaseHTTPRequestHandler):
         if not key or not name:
             self._send(400, json.dumps({'error': '缺少 key 或名字'}))
             return
-        r = subprocess.run([VENV_PY, '-c',
-            f"import sys, json; sys.path.insert(0,'{TOOL_DIR}'); import film_library as fl; "
-            f"f = fl.rename_film('{key}', {json.dumps(name, ensure_ascii=False)}, "
-            f"{json.dumps(nick, ensure_ascii=False) if nick else 'None'}, "
-            f"{json.dumps(short, ensure_ascii=False) if short else 'None'}); "
-            f"print(json.dumps(f, ensure_ascii=False))"],
-            capture_output=True, text=True, timeout=15, cwd=TOOL_DIR)
         try:
-            film = json.loads(r.stdout.strip())
+            import film_library as fl
+            film = fl.rename_film(key, name, nick, short)
         except Exception:
             film = None
         self._send(200, json.dumps({'ok': film is not None, 'film': film}))
@@ -344,11 +336,37 @@ class Handler(BaseHTTPRequestHandler):
         if not key:
             self._send(400, json.dumps({'error': '缺少 key'}))
             return
-        r = subprocess.run([VENV_PY, '-c',
-            f"import sys; sys.path.insert(0,'{TOOL_DIR}'); import film_library as fl; "
-            f"print('true' if fl.delete_film('{key}') else 'false')"],
-            capture_output=True, text=True, timeout=15, cwd=TOOL_DIR)
-        self._send(200, json.dumps({'ok': r.stdout.strip() == 'true'}))
+        try:
+            import film_library as fl
+            ok = fl.delete_film(key)
+        except Exception:
+            ok = False
+        self._send(200, json.dumps({'ok': ok}))
+
+    def _handle_license_status(self):
+        """返回各胶片的解锁状态：free / unlocked / locked。"""
+        if _lic is None:
+            self._send(200, json.dumps({'ok': True, 'status': {}, 'films': {
+                'free': ['5207'], 'paid': ['portra400', 'ektar100', '5219']}}))
+            return
+        self._send(200, json.dumps({
+            'ok': True,
+            'status': _lic.license_status(),
+            'films': {'free': _lic.FREE_FILMS, 'paid': _lic.PAID_FILMS},
+            'display': _lic.FILM_DISPLAY,
+        }))
+
+    def _handle_license_apply(self, data):
+        """校验并落地解锁码。"""
+        code = (data.get('code') or '').strip()
+        if not code:
+            self._send(400, json.dumps({'error': '缺少解锁码'}))
+            return
+        if _lic is None:
+            self._send(500, json.dumps({'error': 'license 模块未加载'}))
+            return
+        r = _lic.apply_license(code)
+        self._send(200, json.dumps(r))
 
     def _handle_build(self, data):
         if not os.path.exists(FW):
@@ -358,43 +376,34 @@ class Handler(BaseHTTPRequestHandler):
         out_name = data.get('out_name', 'gr3_film_mods_custom.bin')
         out_path = os.path.join(TOOL_DIR, out_name)
 
-        # v16 管线：films = 新增槽位顺序（key 列表），顺序即机内菜单显示顺序；
-        # 缺省用 build_firmware.py 的 FILMS_ORDER
-        cmd = [VENV_PY, os.path.join(TOOL_DIR, 'build_firmware.py'), FW, out_path]
-        # 原生颗粒引擎（Particle）：固定开启。胶片（tone 25+）复用机内「颗粒效果」菜单四档。
-        # 颗粒强度不在网页选，靠机内菜单 Off/Low/Mid/High 调。
-        cmd += ['--grain-native']
         films_order = data.get('films')
-        if isinstance(films_order, list) and films_order:
-            cmd += ['--films', ','.join(str(k) for k in films_order)]
+        if not (isinstance(films_order, list) and films_order):
+            films_order = ['5207']
 
+        # 门控：付费胶片必须已解锁，否则拒绝构建（免费款 5207 始终放行）
+        if _lic is not None:
+            locked = [k for k in films_order if not _lic.is_unlocked(k)]
+            if locked:
+                names = ', '.join(_lic.FILM_DISPLAY.get(k, k) for k in locked)
+                self._send(403, json.dumps({
+                    'error': f'以下胶片未解锁：{names}',
+                    'locked': locked,
+                }))
+                return
+
+        # 进程内构建（PyInstaller 打包后无独立 Python 子进程可用）
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=REPO)
-        except subprocess.TimeoutExpired:
-            self._send(500, json.dumps({'error': '生成超时'}))
+            import build_firmware as bf
+            result = bf.build(FW, out_path, films_order=films_order, grain_native=True)
+        except Exception as e:
+            self._send(500, json.dumps({'error': '生成失败', 'stderr': str(e)[-2000:]}))
             return
 
-        if r.returncode != 0:
-            self._send(500, json.dumps({'error': '生成失败', 'stderr': r.stderr[-2000:]}))
-            return
-
+        # 构建成功后自动核验（尽力而为：verify 依赖脚本式 verify_slots16，失败不影响产出）
         try:
-            result = json.loads(r.stdout.strip())
+            verify = self._verify_firmware(out_path, films_order)
         except Exception:
-            s = r.stdout
-            i = s.rfind('{')
-            j = s.rfind('}')
-            if i != -1 and j != -1 and j > i:
-                try:
-                    result = json.loads(s[i:j+1])
-                except Exception:
-                    result = {'error': '无法解析后端输出', 'raw': r.stdout[-2000:]}
-            else:
-                result = {'error': '无法解析后端输出', 'raw': r.stdout[-2000:]}
-
-        # 构建成功后自动核验（跑 verify_slots16.py，确认 6 胶片 + 12分区色相 + RAW显影 + 标准模式逐字节一致）
-        order = films_order if (isinstance(films_order, list) and films_order) else None
-        verify = self._verify_firmware(out_path, order)
+            verify = {'ok': False, 'detail': '核验跳过（打包环境）'}
         result['verify'] = verify
 
         self._send(200, json.dumps(result))
@@ -458,10 +467,32 @@ class Handler(BaseHTTPRequestHandler):
         detail = 'ALL OK' if ok else ('SOME FAILED' if 'SOME FAILED' in out else '无法判定')
         return {'ok': ok, 'detail': detail}
 
+def _open_browser():
+    """启动后自动用系统默认浏览器打开界面（原生 .app 无终端，靠这个给用户反馈）。"""
+    import threading, time
+    url = f'http://localhost:{PORT}'
+    def _open():
+        time.sleep(1.2)  # 等服务器起来
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:
+            pass
+    threading.Thread(target=_open, daemon=True).start()
+
+
 def main():
+    # 端口占用时先清理（可能上次未正常退出残留的进程）
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(('127.0.0.1', PORT)); s.close()
+    except OSError:
+        # 端口被占：尝试通知已有实例，直接复用（不做破坏性 kill，避免误杀）
+        pass
     server = HTTPServer(('127.0.0.1', PORT), Handler)
+    _open_browser()
     print(f'GR3 胶片滤镜工具已启动: http://localhost:{PORT}')
-    print('按 Ctrl+C 停止')
     try:
         server.serve_forever()
     except KeyboardInterrupt:
