@@ -6,8 +6,15 @@ assembler. `.word` lines are allowed. Returns a list of 32-bit words (little-end
 
 No Homebrew LLVM needed: uses /usr/bin/clang --target=armv7a-none-eabi to assemble, then parses the ELF .o to
 extract the .text machine code (replacing llvm-objcopy).
+
+临时目录用 gr3_tmp 而非 stdlib tempfile：在「禁止删除文件」的受限环境（沙箱、
+部分 MDM 管控机）下 tempfile 模块会整体失效，这里改为在用户数据目录下自建
+scratch 区，保证打包后的 app 也能正常汇编。
 """
-import os, re, subprocess, tempfile, struct
+import os, re, sys, subprocess, struct
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gr3_tmp  # noqa: E402
 
 CLANG = os.environ.get('CLANG', '/usr/bin/clang')
 COND = {'b': 0xE, 'beq': 0x0, 'bne': 0x1, 'blo': 0x3, 'bhs': 0x2, 'bls': 0x9, 'bhi': 0x8}
@@ -52,13 +59,15 @@ def assemble(src, base):
             fixed.append(f'{m.group(1) or ""}.word {word:#x}')
         else:
             fixed.append(l)
-    with tempfile.TemporaryDirectory() as d:
+    with gr3_tmp.temp_dir('asm-') as d:
         s, o = (os.path.join(d, n) for n in ('a.s', 'a.o'))
-        open(s, 'w').write('.syntax unified\n.arm\n.text\n' + '\n'.join(fixed) + '\n')
+        with open(s, 'w') as f:
+            f.write('.syntax unified\n.arm\n.text\n' + '\n'.join(fixed) + '\n')
         r = subprocess.run([CLANG, '--target=armv7a-none-eabi', '-c', '-o', o, s],
                            capture_output=True, text=True)
         if r.returncode:
             raise RuntimeError(r.stderr)
-        data = _elf_text(open(o, 'rb').read())
+        with open(o, 'rb') as f:
+            data = _elf_text(f.read())
     assert len(data) == 4 * len(lines), (len(data), len(lines))
     return [int.from_bytes(data[i:i + 4], 'little') for i in range(0, len(data), 4)]

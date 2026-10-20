@@ -31,8 +31,8 @@ def rtos_of(path):
     return bytes(dec[rows['RTOS']['start'] + 16:rows['RTOS']['end']])
 
 
-def pt_result(rtos, tone, grain):
-    """Emulate the pass-through for (tone, grain) and return ctx+0x1F8 (u16)."""
+def _run(rtos, tone, grain):
+    """Shared emulation: return (ctx+0x1F8, SI+0x795 after the epilogue write-back)."""
     e = Emu(rtos)
     ctx = e.alloc(0x300)
     obj = e.alloc(0x40)
@@ -46,7 +46,20 @@ def pt_result(rtos, tone, grain):
     e.w8(si + 0x794, 4)         # clarity = 4 (neutral)
     e.w8(si + 0x795, grain)     # grain
     e.call(PT, ctx, obj)
-    return struct.unpack('<H', e.u.mem_read(ctx + 0x1F8, 2))[0]
+    ctx_1f8 = struct.unpack('<H', e.u.mem_read(ctx + 0x1F8, 2))[0]
+    si_795 = e.u.mem_read(si + 0x795, 1)[0]   # value AFTER the epilogue write-back
+    return ctx_1f8, si_795
+
+
+def pt_result(rtos, tone, grain):
+    """Emulate the pass-through for (tone, grain) and return ctx+0x1F8 (u16)."""
+    return _run(rtos, tone, grain)[0]
+
+
+def pt_writeback(rtos, tone, grain):
+    """Return (ctx+0x1F8, SI+0x795-after-epilogue).  The 2nd is the regression we are fixing:
+    before the fix, the epilogue zeroed SI+0x795 (grain reset to OFF right after a shot)."""
+    return _run(rtos, tone, grain)
 
 
 S = rtos_of(sys.argv[1])
@@ -72,6 +85,24 @@ for tone in (25, 26, 27, 28):
             check(False, f'film tone {tone} grain={g}: stock={s} (want 0), fixed={p} (want {g})')
             break
 check(films_ok, 'films tone 25-28: stock forces 0, fixed carries SI+0x795')
+
+# ★ 回写验证（修复的核心）：pipeline 的 epilogue 0x536db9c8 是 `strb r6,[r3,#0x795]`。
+#   修复前 stub 用 r2 承载 grain，epilogue 用 r6=0 把 SI+0x795 清成 0 —— 拍完颗粒跳回 OFF。
+#   修复后必须原样写回（SI+0x795 == grain）。
+wb_ok = True
+for tone in (25, 26, 27, 28):
+    for g in (1, 2, 3):
+        p_ctx, p_si = pt_writeback(P, tone, g)
+        if p_ctx != g or p_si != g:
+            wb_ok = False
+            check(False, f'film tone {tone} grain={g}: fixed ctx={p_ctx} (want {g}), SI+0x795 writeback={p_si} (want {g})')
+            break
+check(wb_ok, 'films tone 25-28: epilogue writes SI+0x795 back unchanged (grain survives the shot)')
+
+# 对照组：修复前的固件确实会把 SI+0x795 清零（确认 bug 存在，且我们的验证能抓住它）
+s_ctx, s_si = pt_writeback(S, 25, 2)
+check(s_ctx == 0 and s_si == 0,
+      f'stock film tone 25 grain=2: ctx={s_ctx} (want 0), SI+0x795 writeback={s_si} (want 0 — the reset bug)')
 
 print()
 print('ALL OK' if ok else 'FAILURES PRESENT')

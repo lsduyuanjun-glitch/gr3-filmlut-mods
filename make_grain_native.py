@@ -51,13 +51,27 @@ GATE_WRITE = 0x53513238        # `strb r3,[r0,#0x24]; bx lr` (the stock write-an
 GATE_MOV_ENC = 0xE3A03000      # mov r3, #0
 
 
-def gate_stub_src(first_tone, n):
-    """stub: tone in r1+0x77C; tone in [first_tone, first_tone+n) -> Monotone rule, else stock (mov 0).
+def gate_stub_src(first_tone, n, fixed=False):
+    """stub: tone in r1+0x77C; tone in [first_tone, first_tone+n) -> enable, else stock (mov 0).
+
+    fixed=False -> follow the Monotone rule 0x53513240 (reads SI+0x795, enables if non-default).
+    fixed=True  -> always enable the stage for films (grain is baked in; independent of SI+0x795).
 
     r3 is a scratch register in the caller (the gate function reads it fresh from r1+0x77C), so no
-    save/restore is needed: on the film path we branch to the Monotone rule which re-reads r1; on the
-    non-film path we set r3=0 exactly as the replaced `mov r3,#0` did.
+    save/restore is needed.
     """
+    if fixed:
+        return f'''
+            ldrb r3, [r1, #0x77c]
+            cmp r3, #{first_tone}
+            blo N
+            cmp r3, #{first_tone + n}
+            bhs N
+            mov r3, #1
+            b abs({GATE_WRITE:#x})
+        N:  mov r3, #0
+            b abs({GATE_WRITE:#x})
+        '''
     return f'''
         ldrb r3, [r1, #0x77c]
         cmp r3, #{first_tone}
@@ -79,25 +93,58 @@ PT_STRH = 0x536DBB58          # strh r1,[ip]  (r1=0, ip=ctx+0x1F8); replace with
 PT_STRH_ENC = 0xE1CC10B0      # strh r1,[ip]  (ip = r12)
 
 
-def pipeline_stub_src(_base=None):
-    """Read SI+0x795 into ctx+0x1F8.  r3=SI, ip=ctx+0x1F8 on entry (caller-saved, untouched by BL).
+def pipeline_stub_src(fixed=None, grains=None, n=4, _base=None):
+    """Write ctx+0x1F8 and carry the value in r6 so the epilogue write-back keeps it.
 
-    Uses r2 as scratch (r2 is dead at this point in the Standard case: the next uses are
-    `movw r7/r5` and `strh r1,[...]` which set their own registers).  r1 must stay 0 for the
-    trailing `strh r1,[r0,r7]` / `strh r1,[r8]` / `strh r1,[r0,r5]` writes.
+    r3=SI (param area, so r3+0x77c = the ORIGINAL tone), ip=ctx+0x1F8 on entry.
+
+    grains=None, fixed=None -> read SI+0x795 (menu-adjustable grain; Standard is unaffected because
+                               its SI+0x795 is always 0)
+    grains=[g0,g1,...]       -> per-slot FIXED values (0=Off,1=High,2=Mid,3=Low), one per film in
+                               menu order.  Each film's tone = 25 + slot_index; a cmp-chain looks up
+                               the slot and writes its value.  Non-film tones fall through to 0.
+    fixed=1/2/3              -> (legacy) single FIXED value for ALL films (tone 25+).
+
+    ★ 必须用 r6 承载值：epilogue 0x536db9c8 是 `strb r6,[r3,#0x795]`（回写 live grain）。
     """
+    if grains is not None:
+        lines = ['mov r6, #0', 'ldrb r2, [r3, #0x77c]']
+        for i, g in enumerate(grains):
+            lines.append(f'cmp r2, #{25 + i}')
+            lines.append(f'moveq r6, #{g}')
+            lines.append('beq W')
+        lines.append('W:  strh r6, [ip]')
+        lines.append('bx lr')
+        return '\n'.join(lines)
+    if fixed is not None:
+        return f'''
+            ldrb r2, [r3, #0x77c]
+            cmp r2, #25
+            blo N
+            cmp r2, #{25 + n}
+            bhs N
+            mov r6, #{fixed}
+            strh r6, [ip]
+            bx lr
+        N:  mov r6, #0
+            strh r6, [ip]
+            bx lr
+        '''
     return f'''
-        ldrb r2, [r3, #0x795]
-        strh r2, [ip]
+        ldrb r6, [r3, #0x795]
+        strh r6, [ip]
         bx lr
     '''
 
 
-def patch_pipeline(img, films, info):
-    """2. pipeline pass-through: ctx+0x1F8 <- SI+0x795 (films keep grain; Standard unchanged)."""
+def patch_pipeline(img, films, info, fixed=None, grains=None):
+    """2. pipeline pass-through: ctx+0x1F8 <- SI+0x795 (or per-slot fixed values, films only)."""
     assert img.word(PT_STRH) == PT_STRH_ENC, hex(img.word(PT_STRH))
     sp = _grain_space(info)
-    at = code(sp, img, 'grain pipeline', pipeline_stub_src)
+    n = len(films)
+    if grains is None and fixed is not None:
+        grains = [fixed] * n
+    at = code(sp, img, 'grain pipeline', lambda base: pipeline_stub_src(fixed, grains, n))
     put(img, PT_STRH, BL(PT_STRH, at), PT_STRH_ENC)
     return dict(pipeline=hex(at), space=[(nm, hex(a), sz) for nm, a, sz in sp.used])
 
@@ -130,6 +177,14 @@ def _free_regions(info, min_sz):
 SETTER = 0x5354C570            # property 0xC3 setter (writes SI+0x795)
 SP_NOOP = 0x532C1844           # SetParticle no-op epilogue (shared by all three default branches)
 SP_DEFAULTS = {0: (0x532C18C0, 0xEAFFFFDF), 1: (0x532C1888, 0xEAFFFFED), 2: (0x532C17F0, 0xEA000013)}
+# SetParticle has exactly two callers:
+#   caller A 0x531b0d28 (menu: user picks a grain step from value list 0x53B590D8) -> return 0x531b0d2c
+#   caller B 0x532c3490 (bulk-apply param block 0x532c33c8 on tone switch)          -> return 0x532c3494
+# On a tone switch (换滤镜) caller B re-applies the param block, whose grain (+0x12) is 0 for films
+# (no persistence), so it overwrites the user's grain with OFF.  We detect that path by the saved
+# caller return address (it sits on the stack at [sp,#32] because SetParticle's prologue pushed
+# {r4,r5,r6,r7,fp,ip,lr,pc} then sub sp,#8, and its internal BLs only clobber the lr *register*).
+CALLER_BULK = 0x532C3494       # SetParticle return address when invoked from the bulk-apply path
 GDP_READ_OFF = {0: 0x29A, 1: 0x37C, 2: 0x45E}                  # per-type SI field read by GetDefault mono
 GDP_MONO_READ = 0x532406FC     # returns SI object pointer (in r0)
 GDP_ASSERT = 0x532C9990        # GetDefaultValueParticle assert default (returns 0)
@@ -148,15 +203,29 @@ def setparticle_stub_src(n, t):
     write fns use after their check passes), skipping the gate for films.
     """
     off = {0: 0x29A, 1: 0x37C, 2: 0x45E}[t]
+    # ★ 关键修复：除了写 type 字段 + 走 property 0xC3 setter（原 Monotone 序列），再直接
+    #   strb 到 SI+0x795。gate 0x53513240 明确读 SI+0x795 判定颗粒档位（这是唯一可确证的事实），
+    #   而 property 0xC3 setter（0x5354C570 → 0x5354b564 → 0x536abd28 虚函数链）在胶片 tone 25+
+    #   下的路由未经真机验证，可能写不到 SI+0x795。直接写这一字节能兜底保证 gate 读到非零。
+    #
+    # ★★ 修复「换滤镜跳回」：换滤镜走 caller B（批量应用参数块），它的 grain=0 会把用户手动
+    #   设的档位覆盖成 OFF。这里读栈上保存的 caller 返回地址（[sp,#32]），若是 caller B
+    #   （返回 0x532c3494）就跳过写入，保持 SI+0x29a/0x795 原值；手动设档（caller A）正常写入。
     return f'''
         cmp r5, #12
         blo N
         cmp r5, #{12 + n}
         bhs N
+        ldr ip, [sp, #32]
+        movw r3, #{CALLER_BULK & 0xFFFF:#x}
+        movt r3, #{CALLER_BULK >> 16:#x}
+        cmp ip, r3
+        beq N
         push {{r4, lr}}
         mov r4, r0
         ldr r3, [r4, #4]
         strb r6, [r3, #{off}]
+        strb r6, [r3, #0x795]
         mov r0, r4
         bl abs(0x53525d5c)
         ldr r0, [r0]
@@ -207,8 +276,8 @@ def patch_storage(img, films, info):
     return out
 
 
-def patch_gate(img, films, info):
-    """3. effect-stage gate: tone 25+ -> Monotone rule. Uses the v16 free space (no growth needed).
+def patch_gate(img, films, info, fixed=False):
+    """3. effect-stage gate: tone 25+ -> enable (Monotone rule, or fixed enable).
 
     `info` is make_slots15.patch's return dict; its `_code.space` lists every region the v16 build
     already used, so we can pick a still-free region for our ~32 B stub.
@@ -217,9 +286,33 @@ def patch_gate(img, films, info):
     # remaining free regions after the v16 build (space/free_left as (hex, size))
     sp = _grain_space(info)
     n = len(films)
-    at = code(sp, img, 'grain gate', lambda base: gate_stub_src(25, n))
+    at = code(sp, img, 'grain gate', lambda base, fixed=fixed: gate_stub_src(25, n, fixed))
     put(img, GATE_MOV, B(GATE_MOV, at), GATE_MOV_ENC)
     return dict(gate=hex(at), space=[(nm, hex(a), sz) for nm, a, sz in sp.used])
+
+
+def patch_fixed_grain(img, films, info, grains):
+    """Bake per-slot FIXED grain into the firmware — each film renders grain at its own value on
+    every shot, with NO in-camera setting and independent of tone switch / shot reset.
+
+    grains: list[int], length == len(films), one per slot in menu order.
+            0 = Off, 1 = High, 2 = Mid, 3 = Low  (native levels: smaller = heavier grain).
+
+    This is the "straight-out-of-camera grain" path: the pipeline writes each film's fixed value
+    into ctx+0x1F8 (and the epilogue writes it back to SI+0x795), and the gate always enables the
+    stage for films — so the grain survives 换滤镜 and 拍完 (it no longer depends on the SI grain
+    field that gets reset).  We do NOT patch storage/menu, so the film menu has no Grain item
+    (the grain is baked in, not user-adjustable).
+    """
+    if isinstance(grains, int):
+        grains = [grains] * len(films)
+    assert len(grains) == len(films), f'grains length {len(grains)} != films {len(films)}'
+    assert all(g in (0, 1, 2, 3) for g in grains), f'grains must be 0/1/2/3 (Off/High/Mid/Low), got {grains}'
+    return {
+        'pipeline': patch_pipeline(img, films, info, grains=grains),
+        'gate': patch_gate(img, films, info, fixed=True),
+        'grains': grains,
+    }
 
 
 # --- parameter-screen list (FINDINGS §45 "films -> index 12") ------------

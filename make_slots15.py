@@ -84,6 +84,8 @@ ICON_LABELS = dict(                         # key -> (label, colour), as make_ic
     # Duccio 本地胶片（最终 4 款：英泽君基底 + 特性校准，统一命名）
     portra400=('P400', (255, 214, 64)), ektar100=('E100', (255, 120, 80)),
     **{'5207': ('5207', (255, 200, 110)), '5219': ('5219', (150, 180, 255))})
+# 自建胶片自定义图标：key -> 40×40 RGBA numpy array（用户上传图片，_load_custom_films 里填充）
+CUSTOM_ICONS = {}
 SID_MAX = 0x3FF
 
 B = lambda at, to, cond=0xE: (cond << 28) | 0x0A000000 | (((to - at - 8) >> 2) & 0xFFFFFF)
@@ -530,15 +532,19 @@ def patch_film_icons(img, keys, desc_tab):
         assert (dw, dh) == (40, 40)
         o = iconbin(img) + 4 * off
         box = FILM_BOXES.get(key)
-        if box is not None:
-            # 内置胶片：Kodak 胶卷盒风格图标（与本地网页端预览一致）
+        custom = CUSTOM_ICONS.get(key)
+        if custom is not None:
+            # 自建胶片：用户上传的自定义图标（40×40 RGBA，_load_custom_films 里解码）
+            pixels = custom
+        elif box is not None:
+            # 内置胶片（或已注入 box 的自建胶片）：Kodak 胶卷盒风格图标（与本地网页端预览一致）
             from make_icons_custom import render_box
             pixels = render_box(*box)
         else:
-            # 自建胶片（无专属图标）：简单胶片框 + 命名短码
+            # 兜底：简单胶片框 + 命名短码
             label, colour = ICON_LABELS[key]
             pixels = render(frame, label, colour)
-        img.target[o:o + 6400] = pixels.tobytes()
+        img.target[o:o + 6400] = np.ascontiguousarray(pixels).tobytes()
         out[key] = (hex(icon_id), box[4] if box else label)
     assert j <= w * h // 1600
     return out
@@ -706,22 +712,63 @@ def _load_custom_films():
     import os as _os
     import re as _re
     try:
-        _lib_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'film_library.json')
+        # 胶片库位置：优先 webtool/paths.py 的统一解析（打包后指向用户可写目录），
+        # 退回归属本文件所在目录（开发/旧布局兼容）。
+        _lib_path = None
+        try:
+            import sys as _sys
+            _here = _os.path.dirname(_os.path.abspath(__file__))
+            for _p in (_here, _os.path.join(_here, 'webtool')):
+                if _p not in _sys.path:
+                    _sys.path.insert(0, _p)
+            import paths as _paths
+            _lib_path = _os.environ.get('FILM_LIB_PATH') or _paths.LIB_PATH
+        except Exception:
+            _lib_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'film_library.json')
         if not _os.path.exists(_lib_path):
             return
         _lib = json.load(open(_lib_path, encoding='utf-8'))
     except Exception:
         return
+    CUSTOM_ICONS.clear()   # 幂等重载：先清空，按库里最新 icon 重新填充
     for _key, _e in (_lib.get('films') or {}).items():
-        if _key in FILMS:
+        # 只处理自建胶片（key 以 duccio_ 开头）；内置胶片保持胶卷盒图标
+        if not _key.startswith('duccio_'):
             continue
         _name = _e.get('nick') or _e.get('name') or _key
         # 短码：优先英文 short；否则从名字抽 ASCII 字母数字；再否则从 key 抽；全空则用 'CSTM'
         _ascii = lambda _s: _re.sub(r'[^A-Za-z0-9]', '', _s or '')
         _cand = _ascii(_e.get('short')) or _ascii(_name) or _ascii(_key) or 'CSTM'
         _short = _cand[:4].upper()
-        FILMS.setdefault(_key, _name)
-        ICON_LABELS.setdefault(_key, (_short, (200, 190, 175)))
+        FILMS[_key] = _name
+        ICON_LABELS[_key] = (_short, (200, 190, 175))
+        # 胶卷盒配色（box 字段，扁平化）：自建胶片也用 Kodak 胶卷盒图标（不再是简单框 + 短码）
+        _box = _e.get('box')
+        if isinstance(_box, list) and len(_box) >= 7 and isinstance(_box[0], (list, tuple)):
+            try:
+                _body = tuple(int(x) for x in _box[0])
+                _strip = tuple(int(x) for x in _box[1])
+                _brand = (255, 255, 255) if _box[2] == 0 else (0, 0, 0)
+                _bname = _box[3] if isinstance(_box[3], str) else _name
+                _ncol = (255, 255, 255) if _box[4] == 0 else (0, 0, 0)
+                _spd = _box[5] if isinstance(_box[5], str) else _short
+                _scol = (255, 255, 255) if _box[6] == 0 else (0, 0, 0)
+                FILM_BOXES[_key] = (_body, _strip, _brand, _bname, _ncol, _spd, _scol)
+            except Exception:
+                pass
+        # 自定义图标（用户上传图片，base64 PNG → 40×40 RGBA）
+        _icon = _e.get('icon')
+        if isinstance(_icon, str) and _icon:
+            try:
+                import base64 as _b64
+                import io as _io
+                import numpy as _np
+                from PIL import Image as _Image
+                _raw = _b64.b64decode(_icon)
+                _im = _Image.open(_io.BytesIO(_raw)).convert('RGBA').resize((40, 40), _Image.LANCZOS)
+                CUSTOM_ICONS[_key] = _np.ascontiguousarray(_np.asarray(_im, dtype=_np.uint8))
+            except Exception:
+                pass
 
 
 _load_custom_films()

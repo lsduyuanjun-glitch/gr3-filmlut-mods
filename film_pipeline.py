@@ -7,20 +7,64 @@
   3. joint_fit.py -> 第二层（cca1_q512）
   4. lab_fit.py   -> 第三层（post_q512 + lab_fit.after.colorchecker）
 
+★ 打包版关键差异：三个拟合脚本原本用 subprocess 调用，但 PyInstaller 打包后
+  sys.executable 是 app 本体，再 subprocess 会「又启动一个 app 实例」。
+  改为进程内执行（runpy + 临时替换 sys.argv / cwd），行为与命令行完全一致。
+
 用法（供 server.py 调用）：
   from film_pipeline import run_film
-  result = run_film(hald_path, film_key, display_name, box_spec)
+  result = run_film(hald_path, film_key, display_name, box_spec, cube_dir)
 """
-import sys, os, json, subprocess
+import io
+import os
+import contextlib
+import runpy
+import sys
+import json
+
 import numpy as np
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-FITS_DIR = os.path.join(HERE, 'work', 'films_v11', 'fits')
+# paths.py 放在 webtool/（网页端共用）；开发环境下本文件在仓库根，需要把它加进搜索路径。
+# 打包环境下所有 .py 平铺在同一目录，这步是无害的空操作。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'webtool'))
+import paths  # noqa: E402
+
+RESOURCE = paths.RESOURCE_DIR
+# 拟合产物写入「用户可写目录」，不写进只读的 app 包内部
+FITS_DIR = paths.FITS_DIR
+
+
+def _run_script(script_name, argv, cwd):
+    """在进程内执行引擎脚本，行为等价于 `python script.py <argv>`。
+
+    为什么不用 subprocess：PyInstaller 打包后没有可独立调用的 Python 解释器，
+    sys.executable 指向 app 本体，再起子进程等于重复启动整个 app。
+    这里用 runpy 在当前进程里跑，并临时接管 sys.argv / cwd / stdout。
+    返回 (returncode, output)；脚本抛异常时 returncode=1 且 output 含 traceback。
+    """
+    script_path = os.path.join(RESOURCE, script_name)
+    old_argv, old_cwd = sys.argv, os.getcwd()
+    buf = io.StringIO()
+    try:
+        sys.argv = [script_path] + list(argv)
+        os.chdir(cwd)
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            runpy.run_path(script_path, run_name='__main__')
+        return 0, buf.getvalue()
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+        return code, buf.getvalue()
+    except Exception:
+        import traceback
+        return 1, buf.getvalue() + '\n' + traceback.format_exc()
+    finally:
+        sys.argv = old_argv
+        os.chdir(old_cwd)
 
 
 def hald512_to_cube(hald_path, cube_path, title='Film LUT'):
     """把 512×512（64³）HALD 图转成 .cube。"""
-    sys.path.insert(0, HERE)
+    sys.path.insert(0, RESOURCE)
     import xmp2cube
     import tifffile
     arr = tifffile.imread(hald_path)
@@ -31,7 +75,7 @@ def hald512_to_cube(hald_path, cube_path, title='Film LUT'):
 
 def gray_axis_check(cube_path):
     """灰轴健康检查：返回若干档输入中性灰对应的输出 R/B 比例。"""
-    sys.path.insert(0, HERE)
+    sys.path.insert(0, RESOURCE)
     import colour
     lut = colour.read_LUT(cube_path)
     rows = []
@@ -46,31 +90,29 @@ def gray_axis_check(cube_path):
 
 
 def run_fit(cube_path, film_key, boost=4, neutral=3):
-    """三阶段拟合，返回 (fit_path, de_final)。"""
+    """三阶段拟合，返回 (fit_path, de_final)。进程内依次执行三个拟合脚本。"""
+    os.makedirs(FITS_DIR, exist_ok=True)
     base = os.path.join(FITS_DIR, f'{film_key}_b{boost}n{neutral}')
     b4n3 = f'{base}.json'
     joint = f'{base}_joint.json'
     lab = f'{base}_lab.json'
 
-    # 1) cube_fit
-    r = subprocess.run([sys.executable, os.path.join(HERE, 'cube_fit.py'),
-                        '--boost', str(boost), '--neutral', str(neutral),
-                        b4n3, 'srgb', cube_path],
-                       capture_output=True, text=True, cwd=HERE, timeout=180)
-    if r.returncode != 0:
-        raise RuntimeError('cube_fit 失败: ' + r.stderr[-1500:])
+    # 1) cube_fit（cwd=RESOURCE，脚本内按相对路径读 work/base_gamma_std.npy）
+    code, out = _run_script('cube_fit.py',
+                            ['--boost', str(boost), '--neutral', str(neutral),
+                             b4n3, 'srgb', cube_path], RESOURCE)
+    if code != 0:
+        raise RuntimeError('cube_fit 失败: ' + out[-1500:])
 
     # 2) joint_fit
-    r = subprocess.run([sys.executable, os.path.join(HERE, 'joint_fit.py'), b4n3, joint],
-                       capture_output=True, text=True, cwd=HERE, timeout=180)
-    if r.returncode != 0:
-        raise RuntimeError('joint_fit 失败: ' + r.stderr[-1500:])
+    code, out = _run_script('joint_fit.py', [b4n3, joint], RESOURCE)
+    if code != 0:
+        raise RuntimeError('joint_fit 失败: ' + out[-1500:])
 
     # 3) lab_fit
-    r = subprocess.run([sys.executable, os.path.join(HERE, 'lab_fit.py'), joint, lab],
-                       capture_output=True, text=True, cwd=HERE, timeout=180)
-    if r.returncode != 0:
-        raise RuntimeError('lab_fit 失败: ' + r.stderr[-1500:])
+    code, out = _run_script('lab_fit.py', [joint, lab], RESOURCE)
+    if code != 0:
+        raise RuntimeError('lab_fit 失败: ' + out[-1500:])
 
     d = json.load(open(lab))
     after = d.get('lab_fit', {}).get('after', {})
@@ -104,7 +146,7 @@ def run_film_from_xmp(xmp_path, film_key, display_name, box_spec, cube_dir, size
     这是「全自动」路径：不需要 Lightroom 套预设导 HALD 图，直接读 XMP 的 crs:Look 表。
     """
     os.makedirs(cube_dir, exist_ok=True)
-    sys.path.insert(0, HERE)
+    sys.path.insert(0, RESOURCE)
     import xmp_reader
     res = xmp_reader.xmp_to_lut(xmp_path, size=size)
     lut = res['lut']
@@ -129,13 +171,13 @@ def _finish_film(cube_path, film_key, display_name, box_spec, boost, neutral):
     """共用收尾：灰轴检查 + 三阶段拟合 + 返回结果。"""
     gray = gray_axis_check(cube_path)
     fit_path, de = run_fit(cube_path, film_key, boost, neutral)
-    rel_fit = os.path.relpath(fit_path, HERE)
+    # 存绝对路径：打包后资源目录与用户目录分离，相对路径会指错地方
     return {
         'key': film_key,
         'name': display_name,
         'de': de,
         'cube': os.path.basename(cube_path),
-        'fit': rel_fit,
+        'fit': fit_path,
         'gray': gray,
         'box': box_spec,
         # 12 分区色相（MultiAxial hue sectors）：中性恒等矩阵（12×3×3，每行和 1024）。

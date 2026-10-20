@@ -1,12 +1,14 @@
 name: Build release packages
 
 # 打包 GR3 胶片固件工具为原生应用：
-#   - macOS: PyInstaller 打包成 .app（双击即用，无需装 Python）
-#   - Windows: PyInstaller 打包成 .exe（后续启用）
-# 触发：推送 tag（v*）或手动 workflow_dispatch。
+#   - macOS:   PyInstaller 打包成 .app（双击即用，无需装 Python）  → gr3_tool.spec
+#   - Windows: PyInstaller 打包成文件夹（含 GR3FilmTool.exe）         → gr3_tool.win.spec
+# 触发：推送 main / 推送 tag（v*） / 手动 workflow_dispatch。
+# 两个平台用矩阵独立构建（fail-fast:false），互不影响。
 
 on:
   push:
+    branches: [main]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -18,10 +20,13 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            artifact: GR3胶片工具-macOS
-          # Windows 版后续启用（优化完 Mac 再编译 Win）
-          # - os: windows-latest
-          #   artifact: GR3胶片工具-Windows
+            artifact: GR3FilmTool-macOS
+            spec: gr3_tool.spec
+            out_dir: "GR3胶片工具.app"
+          - os: windows-latest
+            artifact: GR3FilmTool-Windows
+            spec: gr3_tool.win.spec
+            out_dir: "GR3FilmTool"
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -35,36 +40,22 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install capstone numpy scipy pillow unicorn==2.1.4 pyinstaller
+          # cryptography / tifffile / colour-science 是 Windows 冻结版必需（Mac .app 用独立 python 运行时，自带）
+          pip install capstone numpy scipy pillow unicorn==2.1.4 pyinstaller cryptography tifffile colour-science
 
-      - name: Build with PyInstaller (macOS .app)
-        if: runner.os == 'macOS'
-        run: |
-          python -m PyInstaller gr3_tool.spec --noconfirm --clean
-          ls -la dist/
+      - name: Build with PyInstaller
+        run: python -m PyInstaller ${{ matrix.spec }} --noconfirm --clean
 
-      - name: Build with PyInstaller (Windows .exe)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          python -m PyInstaller gr3_tool.spec --noconfirm --clean
-          ls -la dist/
-
-      - name: Package macOS app
-        if: runner.os == 'macOS'
-        run: |
-          cd dist
-          # .app 是目录，zip 时用 -r 保留结构，用 ditto 保留资源叉与签名
-          ditto -c -k --keepParent "GR3胶片工具.app" "../GR3胶片工具-macOS.zip"
-          echo "artifact=GR3胶片工具-macOS.zip" >> "$GITHUB_ENV"
-
-      - name: Package Windows exe
-        if: runner.os == 'Windows'
+      - name: Package (zip)
         shell: bash
         run: |
           cd dist
-          zip -r "../GR3胶片工具-Windows.zip" "GR3胶片工具" -x "*.DS_Store"
-          echo "artifact=GR3胶片工具-Windows.zip" >> "$GITHUB_ENV"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -r "../${{ matrix.artifact }}.zip" "${{ matrix.out_dir }}" || powershell -Command "Compress-Archive -Path '${{ matrix.out_dir }}' -DestinationPath '../${{ matrix.artifact }}.zip' -Force"
+          else
+            ditto -c -k --keepParent "${{ matrix.out_dir }}" "../${{ matrix.artifact }}.zip"
+          fi
+          echo "artifact=${{ matrix.artifact }}.zip" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -184,11 +184,14 @@
 
   .lib-item {
     display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap;
     padding: 10px 0; border-bottom: 1px solid #f2f0ec;
   }
   .lib-item:last-child { border-bottom: none; }
+  .lib-item > div:nth-child(2) { flex: 1; min-width: 150px; overflow: hidden; }
   .lib-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lib-actions { display: flex; gap: 5px; flex: none; }
+  .lib-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+  .lib-actions { display: flex; gap: 5px; flex: none; margin-left: auto; }
   .btn-mini { padding: 4px 9px; font-size: 11px; border-radius: 6px; }
   .btn-danger { color: #b3483c; border-color: #e6c2bd; background: #fdf7f6; }
   .btn-danger:hover { background: #fbeae7; }
@@ -205,8 +208,8 @@
 <div class="topbar">
   <div class="gr-logo">GR</div>
   <div>
-    <div class="t1">GR III 胶片滤镜工具</div>
-    <div class="t2">v16 管线 · 新增影像控制项 · 12 分区色相 · RAW 显影兼容</div>
+    <div class="t1">GR III 胶片滤镜工具 <span id="verBadge" class="mini-note" style="font-weight:700;color:#1e7d46;background:#e8f4ec;padding:1px 7px;border-radius:6px">v1.5.2</span></div>
+    <div class="t2">逐槽颗粒 · 自定义图标 · v16 管线</div>
   </div>
   <div class="spacer"></div>
   <div class="env"><span class="dot" id="dot"></span><span id="statusText">检查环境…</span></div>
@@ -224,8 +227,9 @@
         <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
         <div class="field-label" style="margin-bottom:8px">官方固件（基底，需自行导入）</div>
         <div class="mini-note" style="line-height:1.7">
-          本工具以理光官方固件为底。请从理光官网下载 <b>GR III 2.10</b> 固件 <span class="mono">fwdc239b.bin</span>，放入工具目录下的 <span class="mono">official_firmware/</span> 文件夹后刷新本页。
+          本工具以理光官方固件为底。请从理光官网下载 <b>GR III 2.10</b> 固件 <span class="mono">fwdc239b.bin</span>，放到<b>桌面</b>或<b>下载</b>文件夹即可（工具会自动找到）。也可手动放入工具的用户数据目录。
         </div>
+        <div class="mini-note" id="fwPathNote" style="margin-top:6px;color:#8a6a33"></div>
         <div class="mini-note" style="margin-top:8px">刷回官方：把官方 <span class="mono">fwdc239b.bin</span> 放 SD 卡根目录，关机按住 MENU 开机刷入即可恢复原厂。</div>
       </div>
     </div>
@@ -248,6 +252,7 @@
         <div class="field-label">输出文件</div>
         <input class="inp" value="gr3_film_mods_custom.bin" readonly style="margin-bottom:10px">
         <div class="mini-note">6 个胶片追加为「新增影像控制项」，官方模式逐字节保留</div>
+        <div class="mini-note" style="margin-top:10px;margin-bottom:10px">颗粒在<b>中栏每个槽位详情</b>里逐槽选择（无 / Low / Mid / High），烘焙进固件、相机直出就带颗粒，换滤镜也不丢。</div>
         <button class="btn btn-dark btn-block build-cta" id="buildBtn" onclick="build()">生成固件</button>
         <div id="buildStatus" style="margin-top:10px"></div>
         <a id="dlBtn" class="dl-btn" href="/gr3_film_mods_custom.bin" download>✓ 下载固件（已验证可用）</a>
@@ -336,15 +341,16 @@
 
   // 胶片库（用户自建，动态加载）
   let LIB_FILMS = [];
+  // 解锁状态：{ 'portra400': 'locked'|'unlocked'|'free', ... }
+  let LICENSE_STATUS = {};
   // 旧操作模式：先选定槽位（新增#1~#6），再在详情里给这个槽位选滤镜
   let selSlot = 0;
 
-  // v16 新增槽位分配：6 个槽位（固定），默认前 4 槽依次装 4 款胶片，后 2 槽留空待你选
-  let SLOT_ASSIGN = ['portra400', 'ektar100', '5207', '5219', null, null];
+  // v16 新增槽位分配：6 个槽位（固定）。默认 5207（免费款）在第一槽，其余付费款依次排后。
+  let SLOT_ASSIGN = ['5207', 'portra400', 'ektar100', '5219', null, null];
 
-  // 机内原生颗粒引擎（Particle）：已固定植入固件（--grain-native）。
-  // 颗粒强度不在网页选择，刷机后由相机菜单「颗粒效果」四档控制：Off / Low / Mid / High。
-  // 各档大致效果见 renderDetail 里的「机内颗粒档位」说明表。
+  // 颗粒逐槽位独立：每个槽位详情里（「滤镜胶卷」选择框下）有「颗粒强度」下拉，
+  //   SLOT_GRAIN[i] = 0=无 1=High 2=Mid 3=Low，构建时按槽位烘焙进固件（直出带颗粒，换滤镜不丢）。
   function libToFilm(f) {
     const b = f.box || [];
     const body = b[0] ? `rgb(${b[0].join(',')})` : '#102244';
@@ -354,7 +360,10 @@
     const txtCol = b[4] === 0 ? '#fcfcfc' : '#141210';
     const speedText = b[5] || f.short || f.name;
     return {
-      key: f.key, name: '★ ' + f.name + '（自建）', code: f.short || f.name, de: f.de,
+      key: f.key,
+      // 预设款（随工具出货）只显示名字；用户自己上传的才标 ★（自建）
+      name: f.preset ? f.name : '★ ' + f.name + '（自建）',
+      code: f.short || f.name, de: f.de,
       box: body, strip, brandCol, bname, txtCol, speedText, version: 'legacy',
     };
   }
@@ -364,6 +373,18 @@
       const d = await (await fetch('/film/list')).json();
       if (d.ok && d.films) {
         LIB_FILMS = d.films;
+        const libKeys = new Set(d.films.map(f => f.key));
+        // ★ 双向同步：库里没有的 lib 胶片，从 FILMS（下拉选项数据源）里也移除。
+        //   之前只 push 不删——删除胶片后下拉里还留着（用户实际踩到）。
+        for (let i = FILMS.length - 1; i >= 0; i--) {
+          if (!BUILTIN_KEYS.has(FILMS[i].key) && !libKeys.has(FILMS[i].key)) {
+            FILMS.splice(i, 1);
+          }
+        }
+        // 指向已删胶片的槽位一并清空
+        SLOT_ASSIGN = SLOT_ASSIGN.map(
+          k => (k && !BUILTIN_KEYS.has(k) && !libKeys.has(k)) ? null : k);
+        // 库里新增的（新建的胶片）追加进 FILMS
         const keys = new Set(FILMS.map(f => f.key));
         d.films.forEach(f => {
           if (!keys.has(f.key)) {
@@ -373,6 +394,50 @@
         renderFilmLib();
       }
     } catch (e) { /* 胶片库加载失败不阻塞主流程 */ }
+  }
+
+  // 加载解锁状态（免费款 free / 已解锁 unlocked / 锁定 locked）
+  async function loadLicenseStatus() {
+    try {
+      const d = await (await fetch('/license/status')).json();
+      if (d && d.status) {
+        LICENSE_STATUS = d.status;
+        renderList();
+        renderDetail();
+      }
+    } catch (e) { /* 解锁状态加载失败不阻塞 */ }
+  }
+
+  // 判断某胶片是否锁定
+  // ★ 只有 /license/status 明确标 'locked' 的内置付费款才算锁定；
+  //   自建胶片（duccio_xxxx 等）不在名单里 → 一律放行（服务端才是权威门控）。
+  //   之前「未加载到状态时默认视为锁定」会把自建胶片也锁住，是错误行为。
+  function isFilmLocked(key) {
+    return LICENSE_STATUS[key] === 'locked';
+  }
+
+  // 提交解锁码
+  async function applyLicense() {
+    const code = (document.getElementById('licenseInput')?.value || '').trim();
+    if (!code) { alert('请先输入解锁码'); return; }
+    const btn = document.getElementById('licenseApplyBtn');
+    btn && (btn.disabled = true);
+    try {
+      const r = await (await fetch('/license/apply', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ code })
+      })).json();
+      if (r.ok) {
+        alert('解锁成功！全部付费胶片（Portra 400 / Ektar 100 / Kodak 5219）已永久解锁。');
+        await loadLicenseStatus();
+      } else {
+        alert('解锁失败：' + (r.reason || r.error || '未知错误'));
+      }
+    } catch (e) {
+      alert('解锁请求失败：' + e.message);
+    } finally {
+      btn && (btn.disabled = false);
+    }
   }
 
   function boxHTML(f, size = '') {
@@ -409,11 +474,12 @@
         </div>`;
         return;
       }
+      const locked = isFilmLocked(f.key);
       html += `
-        <div class="film-item ${idx === selSlot ? 'sel' : ''}" onclick="selectSlot(${idx})">
+        <div class="film-item ${idx === selSlot ? 'sel' : ''} ${locked ? 'locked' : ''}" onclick="selectSlot(${idx})">
           ${boxHTML(f)}
           <div class="fi-info">
-            <div class="fi-name"><span style="color:var(--accent);font-weight:700">${idx + 1}</span> · ${f.name}</div>
+            <div class="fi-name"><span style="color:var(--accent);font-weight:700">${idx + 1}</span> · ${f.name} ${locked ? '<span style="color:#c0392b">🔒</span>' : ''}</div>
             <div class="fi-sub">
               <div class="meta">
                 <span class="pos-tag">新增#${idx + 1} · tone ${25 + idx}</span>
@@ -453,7 +519,8 @@
     const key = SLOT_ASSIGN[selSlot];
     const f = key ? filmOf(key) : null;
     const tone = 25 + selSlot;   // v16 追加 tone
-    const opts = FILMS.map(x => `<option value="${x.key}" ${key === x.key ? 'selected' : ''}>${x.name}</option>`).join('');
+    const opts = FILMS.map(x => `<option value="${x.key}" ${key === x.key ? 'selected' : ''}>${x.name}${isFilmLocked(x.key) ? ' 🔒' : ''}</option>`).join('');
+    const curLocked = f ? isFilmLocked(f.key) : false;
 
     if (!f) {
       document.getElementById('detail').innerHTML = `
@@ -471,6 +538,11 @@
         <div style="margin-top:16px">
           <div class="field-label">滤镜胶卷 <span style="color:var(--muted);font-weight:400">（本槽位装哪款胶片）</span></div>
           <select onchange="assignSlot(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${opts}</select>
+        </div>
+        <div style="margin-top:12px">
+          <div class="field-label">颗粒强度 <span style="color:var(--muted);font-weight:400">（本槽位直出颗粒，逐槽独立）</span></div>
+          <select onchange="setSlotGrain(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${grainOptions(selSlot)}</select>
+          <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px">颗粒烘焙进固件，相机直出 JPG 就带颗粒，换滤镜也不丢。</div>
         </div>
       `;
       return;
@@ -500,16 +572,21 @@
             <b>机内位置</b>：新增槽位 #${selSlot + 1}（在官方「高对比黑白」之后，紧挨其他新增槽位）
           </div>
           <div style="margin-top:12px">
-            <div class="field-label">机内颗粒 <span style="color:var(--muted);font-weight:400">（已植入，刷机后用相机菜单调）</span></div>
-            <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:6px">本槽位已接入原生颗粒引擎，刷机后在相机「颗粒效果」菜单里选档位，网页端无需设置。</div>
+            <div class="field-label">滤镜胶卷 <span style="color:var(--muted);font-weight:400">（本槽位装哪款胶片）</span></div>
+            <select onchange="assignSlot(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${opts}</select>
+          </div>
+          <div style="margin-top:12px">
+            <div class="field-label">颗粒强度 <span style="color:var(--muted);font-weight:400">（本槽位直出颗粒，逐槽独立）</span></div>
+            <select onchange="setSlotGrain(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${grainOptions(selSlot)}</select>
+            <div style="font-size:11px;color:var(--muted);line-height:1.6;margin:6px 0">颗粒烘焙进固件，相机直出 JPG 就带颗粒，换滤镜也不丢。四档效果参考：</div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
               <tr style="border-bottom:1px solid var(--line)">
                 <td style="padding:5px 8px;color:var(--muted);width:64px">档位</td>
                 <td style="padding:5px 8px;color:var(--muted)">大致效果</td>
               </tr>
               <tr style="border-bottom:1px solid var(--line)">
-                <td style="padding:5px 8px;font-weight:600">Off</td>
-                <td style="padding:5px 8px">无颗粒，画面干净</td>
+                <td style="padding:5px 8px;font-weight:600">无颗粒</td>
+                <td style="padding:5px 8px">画面干净</td>
               </tr>
               <tr style="border-bottom:1px solid var(--line)">
                 <td style="padding:5px 8px;font-weight:600">Low（弱）</td>
@@ -525,10 +602,20 @@
               </tr>
             </table>
           </div>
-          <div style="margin-top:12px">
-            <div class="field-label">滤镜胶卷 <span style="color:var(--muted);font-weight:400">（本槽位装哪款胶片）</span></div>
-            <select onchange="assignSlot(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${opts}</select>
+          ${curLocked ? `
+          <div style="margin-top:12px;padding:12px;border:1px solid #e0b4b4;background:#fdf3f3;border-radius:8px">
+            <div style="font-size:12px;font-weight:700;color:#c0392b;margin-bottom:6px">🔒 本胶片需解锁</div>
+            <div style="font-size:11px;color:#7f8c8d;line-height:1.6;margin-bottom:8px">
+              ${f.name} 是付费胶片。一个解锁码可一次性解锁全部三款付费胶片
+              （Portra 400 / Ektar 100 / Kodak 5219），输入后永久生效。
+              免费款「Kodak 5207」可直接使用，两个空槽位可上传你自己的 CUBE / XMP。
+            </div>
+            <div style="display:flex;gap:6px">
+              <input id="licenseInput" class="inp" placeholder="粘贴解锁码" style="flex:1;font-size:12px">
+              <button id="licenseApplyBtn" onclick="applyLicense()" style="font-size:12px;padding:5px 12px;border:none;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer">解锁</button>
+            </div>
           </div>
+          ` : ''}
         </div>
       </div>
     `;
@@ -549,18 +636,22 @@
       const d = await (await fetch('/status')).json();
       const dot = document.getElementById('dot');
       const txt = document.getElementById('statusText');
-      if (d.fw_ready && d.repo_ready && d.venv_ready) {
+      // 角标显示「实际运行的后端版本」——旧进程/缓存页会暴露出来，一眼可辨
+      const verEl = document.getElementById('verBadge');
+      if (verEl) verEl.textContent = 'v' + (d.version || '1.5.1');
+      // 显示实际使用的官方固件路径（让用户知道工具从哪里读的）
+      const pn = document.getElementById('fwPathNote');
+      if (pn) {
+        pn.textContent = d.fw_ready ? ('当前使用的固件：' + d.fw_path)
+                                    : ('未找到固件。请放到任意位置后点「重新检测」，或放到：'
+                                       + (d.user_dir || '') + '/official_firmware/');
+      }
+      if (d.fw_ready) {
         dot.className = 'dot ok'; txt.textContent = '环境就绪';
         hideFwGuide();
-      } else if (!d.fw_ready) {
+      } else {
         dot.className = 'dot err'; txt.textContent = '缺少官方固件';
         showFwGuide();
-      } else {
-        dot.className = 'dot err';
-        txt.textContent = '环境不完整：' + [
-          !d.repo_ready && '缺引擎', !d.venv_ready && '缺 Python 环境',
-        ].filter(Boolean).join('；');
-        hideFwGuide();
       }
     } catch (e) {
       document.getElementById('dot').className = 'dot err';
@@ -568,7 +659,7 @@
     }
   }
 
-  /* 官方固件缺失时的导入引导：告知用户去理光官网下载并放入 official_firmware/ */
+  /* 官方固件缺失时的导入引导：告知用户去理光官网下载并放到工具会自动搜索的位置 */
   function showFwGuide() {
     let g = document.getElementById('fwGuide');
     if (!g) {
@@ -585,15 +676,36 @@
       <div>本工具以理光官方固件为底，需要你先自行下载一份 <b>GR III 2.10</b> 官方固件：</div>
       <ol style="margin:6px 0 6px 18px">
         <li>前往理光官网下载 GR III 固件 <span class="mono">fwdc239b.bin</span>（2.10 版）</li>
-        <li>把下载的 <span class="mono">fwdc239b.bin</span> 放入本工具目录下的 <span class="mono">official_firmware/</span> 文件夹</li>
+        <li>把 <span class="mono">fwdc239b.bin</span> 放到 <b>桌面</b> 或 <b>下载</b> 文件夹即可（工具会自动找到它）</li>
         <li>回到本页，点击下方「重新检测」</li>
       </ol>
-      <button onclick="checkStatus()" style="margin-top:6px;padding:6px 14px;border:1px solid #c9a25a;border-radius:6px;background:#fff;color:#6b4a12;cursor:pointer;font-size:12.5px">重新检测</button>
+      <div style="margin-top:4px;color:#8a6a33;font-size:11.5px">也可以手动放到：<span class="mono" id="fwUserDir">~/Library/Application Support/GR3FilmTool/official_firmware/</span></div>
+      <button onclick="checkStatus()" style="margin-top:8px;padding:6px 14px;border:1px solid #c9a25a;border-radius:6px;background:#fff;color:#6b4a12;cursor:pointer;font-size:12.5px">重新检测</button>
     `;
+    // 用后端返回的真实用户目录路径覆盖默认文案（区别于网页版/打包版）
+    fetch('/status').then(r => r.json()).then(d => {
+      const el = document.getElementById('fwUserDir');
+      if (el && d && d.user_dir) el.textContent = d.user_dir + '/official_firmware/';
+    }).catch(() => {});
   }
   function hideFwGuide() {
     const g = document.getElementById('fwGuide');
     if (g) g.remove();
+  }
+
+  /* ===== 颗粒模式（逐槽位独立） ===== */
+  // SLOT_GRAIN[i] = 0=无 1=High 2=Mid 3=Low（写死烘焙进固件）；默认全部 Mid
+  let SLOT_GRAIN = [2, 2, 2, 2, 2, 2];
+  const GRAIN_NAMES = ['无颗粒', 'High（强）', 'Mid（中）', 'Low（弱）'];
+  function grainOptions(sel) {
+    const g = SLOT_GRAIN[sel];
+    // 顺序：Mid / High / Low / 无（默认 Mid 在最上）
+    return [2, 1, 3, 0].map(v =>
+      `<option value="${v}" ${g === v ? 'selected' : ''}>${GRAIN_NAMES[v]}</option>`).join('');
+  }
+  function setSlotGrain(idx, v) {
+    SLOT_GRAIN[idx] = parseInt(v, 10);
+    renderDetail();   // 重绘详情，让 select 选中态与说明一致
   }
 
   /* ===== 构建 ===== */
@@ -605,7 +717,19 @@
     btn.innerHTML = '<span class="loading"></span>正在生成…';
 
     try {
-      const payload = { out_name: 'gr3_film_mods_custom.bin', films: SLOT_ASSIGN.filter(Boolean) };
+      // 前端预检：有未解锁的付费胶片就提示（后端也会拦，这里提前给友好提示）
+      const lockedKeys = SLOT_ASSIGN.filter(k => k && isFilmLocked(k));
+      if (lockedKeys.length) {
+        const names = lockedKeys.map(k => (filmOf(k)?.name || k)).join('、');
+        throw new Error(`以下胶片未解锁：${names}。请先输入解锁码，或改用免费款 Kodak 5207。`);
+      }
+      // 逐槽位颗粒：只传已装胶片的槽位的颗粒值（与 films 一一对齐）
+      const assigned = SLOT_ASSIGN.map((k, i) => ({ k, g: SLOT_GRAIN[i] })).filter(x => x.k);
+      const payload = {
+        out_name: 'gr3_film_mods_custom.bin',
+        films: assigned.map(x => x.k),
+        grains: assigned.map(x => x.g),
+      };
       const d = await (await fetch('/build', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -786,13 +910,16 @@
   }
 
   /* ===== 胶片库 ===== */
+  // 内置 4 款（硬编码在 FILMS 里的）没有删除/改名；库里的（预设 + 自建）都有。
+  // ★ 之前用「是否在 FILMS 里」分类，但 loadLibrary 会把库胶片也 push 进 FILMS，
+  //   导致自建分支永远走不到、删除按钮从不显示 —— 已改为按硬编码 key 判定。
+  const BUILTIN_KEYS = new Set(['portra400', 'ektar100', '5207', '5219']);
   function renderFilmLib() {
     const box = document.getElementById('filmLib');
     if (!box) return;
-    // 胶片库 = 内置胶片 + 自建胶片，全部列出并标注 ΔE
     const all = [
-      ...FILMS.filter(f => f.key !== 'lib:' + f.key).map(f => ({ builtin: true, f })),
-      ...LIB_FILMS.filter(lf => !FILMS.some(f => f.key === lf.key)).map(lf => ({ builtin: false, lf })),
+      ...FILMS.filter(f => BUILTIN_KEYS.has(f.key)).map(f => ({ builtin: true, f })),
+      ...LIB_FILMS.map(lf => ({ builtin: false, lf })),
     ];
     document.getElementById('libCount').textContent = all.length;
     if (!all.length) {
@@ -806,11 +933,10 @@
         html += `
           <div class="lib-item">
             ${boxHTML(f)}
-            <div style="flex:1;min-width:0">
+            <div>
               <div class="lib-name">${f.name} <span class="mini-note" style="margin-left:4px">内置</span></div>
-              <div style="margin-top:4px">
+              <div class="lib-meta">
                 <span class="de-tag ${deClass(f.de)}">ΔE ${f.de}</span>
-                
               </div>
             </div>
           </div>`;
@@ -821,14 +947,15 @@
         html += `
           <div class="lib-item">
             ${boxHTML(f2)}
-            <div style="flex:1;min-width:0">
-              <div class="lib-name">${f.name}</div>
-              <div style="margin-top:4px">
+            <div>
+              <div class="lib-name">${f.name} <span class="mini-note" style="margin-left:4px">${f.preset ? '预设' : '自建'}</span></div>
+              <div class="lib-meta">
                 <span class="de-tag ${deCls}">ΔE ${f.de}</span>
-                ${f.gray && f.gray.length ? `<span class="mini-note mono" style="margin-left:6px">灰轴 ${grayFlag(f.gray)}</span>` : ''}
+                ${f.gray && f.gray.length ? `<span class="mini-note mono">灰轴 ${grayFlag(f.gray)}</span>` : ''}
               </div>
             </div>
             <div class="lib-actions">
+              <button class="btn btn-mini" onclick="pickFilmIcon('${f.key}')">图标</button>
               <button class="btn btn-mini" onclick="renameFilm('${f.key}')">改名</button>
               <button class="btn btn-mini btn-danger" onclick="deleteFilm('${f.key}')">删</button>
             </div>
@@ -864,21 +991,49 @@
 
   async function deleteFilm(key) {
     const f = LIB_FILMS.find(x => x.key === key);
-    if (!confirm(`删除「${f ? f.name : key}」？`)) return;
+    if (!confirm(`删除「${f ? f.name : key}」？删除后不可恢复。`)) return;
     try {
       const d = await (await fetch('/film/delete', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key }),
       })).json();
       if (!d.ok) throw new Error('删除失败');
+      // 若该胶片装在某个槽位上，把槽位清空（避免指向已删除的胶片）
+      SLOT_ASSIGN = SLOT_ASSIGN.map(k => (k === key ? null : k));
       await loadLibrary(); renderList(); renderDetail();
     } catch (e) { alert('❌ ' + e.message); }
+  }
+
+  // 自定义图标：给自建胶片上传一张图片作为机内图标（40×40）
+  function pickFilmIcon(key) {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = '.png,.jpg,.jpeg';
+    inp.onchange = async () => {
+      const file = inp.files[0];
+      if (!file) return;
+      const b64 = await new Promise(res => {
+        const rd = new FileReader();
+        rd.onload = () => res(rd.result.split(',')[1]);
+        rd.readAsDataURL(file);
+      });
+      try {
+        const d = await (await fetch('/film/icon', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key, image: b64 }),
+        })).json();
+        if (!d.ok) throw new Error(d.error || '图标设置失败');
+        alert('✓ 图标已设置，重新「生成固件」并刷机后生效。');
+      } catch (e) { alert('❌ ' + e.message); }
+    };
+    inp.click();
   }
 
   renderList();
   renderDetail();
   checkStatus();
   loadLibrary();
+  loadLicenseStatus();
 </script>
 </body>
 </html>

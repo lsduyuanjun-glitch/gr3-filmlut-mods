@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """胶片库管理：本地 JSON 持久化，供 server.py 与 build_firmware.py 共用。
 
-库文件：film_library.json（与 build_firmware.py 同目录）
+★ 打包版关键差异：库文件与自建胶片的 fit/cube 必须写到「用户可写目录」，
+  不能写在只读的 app 包内部（macOS 上 .app 内部不可写）。
+  位置由 paths.py 统一决定：~/Library/Application Support/GR3FilmTool/
+
 结构：
   { "films": { "<key>": { "key", "name", "nick", "short", "de",
                           "fit", "cube", "box": [...] } } }
@@ -10,33 +13,37 @@ box 字段扁平化存储图标配色：
   [body_r, body_g, body_b, strip_r, strip_g, strip_b, brand_col, name, name_col, speed, speed_col]
   （name/speed 存字符串，brand_col/name_col/speed_col 存 0=白 1=黑，speed 为空则用 short）
 """
-import os, json, time, hashlib
+import os
+import sys
+import json
+import time
+import hashlib
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-# 库文件固定存在 repo 目录（fit/cube 也都在那里），保证 server 与 build 读写同一份。
-# 路径推导优先级：环境变量 > 本文件所在目录（打包后 engine 数据目录）> 上一级（仓库根）。
-def _repo_dir():
-    if os.environ.get('GR3_REPO'):
-        return os.environ['GR3_REPO']
-    for up in range(0, 4):
-        cand = os.path.abspath(os.path.join(HERE, *(['..'] * up)))
-        if os.path.exists(os.path.join(cand, 'make_slots15.py')) or os.path.exists(os.path.join(cand, 'film_library.json')):
-            return cand
-    return HERE
-
-REPO_DIR = _repo_dir()
-LIB_PATH = os.environ.get('FILM_LIB_PATH', os.path.join(REPO_DIR, 'film_library.json'))
+# paths.py 在 webtool/（开发环境）；打包环境下所有 .py 同目录，这步无害
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'webtool'))
+try:
+    import paths  # noqa: E402
+    LIB_PATH = os.environ.get('FILM_LIB_PATH', paths.LIB_PATH)
+    REPO_DIR = paths.RESOURCE_DIR
+except Exception:                                    # 极端兜底：paths 不可用时退回归属本目录
+    HERE = os.path.dirname(os.path.abspath(__file__))
+    REPO_DIR = HERE
+    LIB_PATH = os.environ.get('FILM_LIB_PATH', os.path.join(HERE, 'film_library.json'))
 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 KODAK_RED = (227, 30, 36)
+
+# ★ 预设款（随工具出货的 Duccio 自制胶片）：前端不标 ★ /（自建），只显示名字。
+#   用户自己上传的（CUBE/XMP）才显示（自建）标记。
+PRESET_KEYS = {'duccio_b10575ad', 'duccio_752a2252'}
 
 
 def _load():
     if not os.path.exists(LIB_PATH):
         return {'films': {}}
     try:
-        d = json.load(open(LIB_PATH))
+        d = json.load(open(LIB_PATH, encoding='utf-8'))
     except Exception:
         return {'films': {}}
     d.setdefault('films', {})
@@ -44,11 +51,16 @@ def _load():
 
 
 def _save(d):
-    json.dump(d, open(LIB_PATH, 'w'), ensure_ascii=False, indent=2)
+    os.makedirs(os.path.dirname(LIB_PATH), exist_ok=True)
+    json.dump(d, open(LIB_PATH, 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
 
 
 def list_films():
-    return list(_load()['films'].values())
+    films = list(_load()['films'].values())
+    for f in films:
+        if f.get('key') in PRESET_KEYS:
+            f['preset'] = True      # 前端据此决定是否标（自建）
+    return films
 
 
 def get_film(key):
@@ -117,6 +129,16 @@ def delete_film(key):
     return True
 
 
+def set_film_icon(key, png_b64):
+    """把自建胶片的机内图标（40×40 PNG 的 base64）写进库的 icon 字段。返回是否成功。"""
+    d = _load()
+    if key not in d['films']:
+        return False
+    d['films'][key]['icon'] = png_b64
+    _save(d)
+    return True
+
+
 def film_to_box_tuple(flat_box):
     """把库里的 flat_box 还原成 make_icons_custom.FILM_BOX 元组。"""
     body = tuple(flat_box[0])
@@ -131,7 +153,6 @@ def film_to_box_tuple(flat_box):
 
 def inject_into_filmbox():
     """把库里的胶片动态注入 make_icons_custom.FILM_BOX，返回注入的 key 列表。"""
-    import sys
     sys.path.insert(0, REPO_DIR)
     import make_icons_custom as mic
     injected = []

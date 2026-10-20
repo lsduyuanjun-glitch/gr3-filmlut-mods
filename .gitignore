@@ -28,3 +28,42 @@ dist/
 .pyinstaller-cache/
 *.spec.bak
 
+# 本地打包/分发目录（体积大，不提交；CI 重新生成）
+dist_*/
+发布包/
+backup_*
+leica-q343
+outputs/
+gr3fm.zip
+capture/
+*.zip
+
+# 构建/探测过程产生的临时产物
+.probe_py/
+.probe_reloc/
+.build_app.py
+
+# 来历不明的临时文件（不要进库）
+webtool/1pfgzoxq
+webtool/t_kunrdt
+
+# 开发/构建过程产生的大量临时目录（绝不提交）
+.pyx86/
+.pyi-shim/
+.probe_*/
+.bug_userdir/
+.bug_userdir2/
+.e2e_userdir/
+.fullflow_userdir*/
+.ditto_test/
+.junk-staging/
+.scratch/
+.tmpdir_test/
+.probe_sig/
+.verify_*/
+.verify_zip*/
+.verify_codegen*
+.verify_universal/
+.verify_fix/
+.zip_test/
+

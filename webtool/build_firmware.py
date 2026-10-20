@@ -18,30 +18,29 @@
 """
 import sys, os, json, hashlib
 
-# —— 可移植路径解析：引擎代码放本目录 engine/，工具目录可整体移动 ——
-_TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
-def _resolve_repo():
-    if os.environ.get('GR3_REPO'):
-        return os.environ['GR3_REPO']
-    # PyInstaller 打包：引擎 .py 平铺在 _TOOL_DIR 本身（datas 平铺到根）
-    if os.path.exists(os.path.join(_TOOL_DIR, 'make_slots15.py')):
-        return _TOOL_DIR
-    bundled = os.path.join(_TOOL_DIR, 'engine')
-    if os.path.isdir(bundled) and os.path.exists(os.path.join(bundled, 'make_slots15.py')):
-        return bundled
-    # 仓库结构：引擎代码在 webtool/ 的上一级（仓库根），直接回溯向上找，不依赖仓库名
-    for up in range(1, 5):
-        cand = os.path.abspath(os.path.join(_TOOL_DIR, *(['..'] * up)))
-        if os.path.isdir(cand) and os.path.exists(os.path.join(cand, 'make_slots15.py')):
-            return cand
-    for up in (3, 4, 2):
-        dev = os.path.abspath(os.path.join(_TOOL_DIR, *(['..'] * up), 'gr3-film-mods'))
-        if os.path.isdir(dev) and os.path.exists(os.path.join(dev, 'make_slots15.py')):
-            return dev
-    return bundled
+import paths  # noqa: E402  (同目录；统一路径解析)
 
-REPO = _resolve_repo()
+# —— 路径解析 ——
+# RESOURCE：只读资源（引擎 .py、work/ 拟合数据、third_party）
+# USER_DIR：用户可写目录（胶片库、解锁状态、生成的固件）
+_TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO = os.environ.get('GR3_REPO') or paths.RESOURCE_DIR
 sys.path.insert(0, REPO)
+sys.path.insert(0, os.path.dirname(os.path.join(REPO, 'film_pipeline.py')))
+
+
+def _abs_fit(path):
+    """把胶片库里的 fit 路径解析成绝对路径。
+
+    新胶片（打包后创建）存的是绝对路径；老胶片存的是相对仓库根的路径
+    （如 work/films_v11/fits/xxx.json），需要拼到资源目录下。
+    """
+    if os.path.isabs(path):
+        return path
+    cand = os.path.join(REPO, path)
+    if os.path.exists(cand):
+        return cand
+    return path
 
 # 胶片 key → v16 fit JSON 路径（含 hue_q10）—— 最终 4 款（英泽君基底 + 特性校准）
 FILMS = {
@@ -73,7 +72,7 @@ def load_film(name):
 
 
 def build(in_path, out_path, films_order=None, raw_nr_above=8000,
-          grain=None, grain_native=False):
+          grain=None, grain_native=False, grain_fixed=None, grains=None):
     """核心构建逻辑（可 import，供 server.py 进程内调用）。
 
     返回 result dict；出错时 raise（带明确信息）。不依赖 sys.argv / print / sys.exit。
@@ -92,6 +91,9 @@ def build(in_path, out_path, films_order=None, raw_nr_above=8000,
     try:
         import make_slots15 as M15
         import make_slots16 as M16
+        # ★ 刷新自建胶片的机内名 / 胶卷盒配色 / 自定义图标：胶片库可能在会话中刚更新过
+        #   （新建胶片、改图标），而 make_slots15 在首次 import 时只读了一次。
+        M15._load_custom_films()
 
         # 校验固件 SHA
         sha = hashlib.sha256(open(in_path, 'rb').read()).hexdigest()
@@ -108,15 +110,15 @@ def build(in_path, out_path, films_order=None, raw_nr_above=8000,
                 fit, de = load_film(key)
                 film_cn = FILM_NAME.get(key, key)
             else:
-                # 自建胶片：从胶片库取 fit 路径
-                lib_path = os.path.join(REPO, 'film_library.json')
+                # 自建胶片：从胶片库取 fit 路径（库在用户可写目录）
+                lib_path = paths.LIB_PATH
                 if not os.path.exists(lib_path):
                     raise ValueError(f'未知胶片 {key}（且无胶片库）')
-                lib = json.load(open(lib_path))
+                lib = json.load(open(lib_path, encoding='utf-8'))
                 entry = lib.get('films', {}).get(key)
                 if not entry:
                     raise ValueError(f'未知胶片 {key}')
-                fit = json.load(open(os.path.join(REPO, entry['fit'])))
+                fit = json.load(open(_abs_fit(entry['fit']), encoding='utf-8'))
                 de = round(float(entry.get('de', 0)), 2)
                 film_cn = entry.get('nick') or entry.get('name') or key
                 if 'hue_q10' not in fit:
@@ -133,7 +135,7 @@ def build(in_path, out_path, films_order=None, raw_nr_above=8000,
         # 执行 v16 patch
         from gr3patch import Image
         img = Image(in_path)
-        if grain_native:
+        if grain_native or grain_fixed is not None or grains is not None:
             img._grain_ext = img.grow(64 * 1024)
             img._grain_ext_cur = img._grain_ext
         info = M15.patch(img, films, raw_nr_above=raw_nr_above)
@@ -141,7 +143,15 @@ def build(in_path, out_path, films_order=None, raw_nr_above=8000,
         info['_rawdev'] = M16.patch_rawdev(img, films, info)
         info['_exif_tone'] = M16.patch_exif_tone(img, films)
 
-        if grain_native:
+        if grains is not None:
+            # 固件写死颗粒（逐槽位）：每槽位一个颗粒值，直出带颗粒，不需要机内设置
+            import make_grain_native
+            info['_grain_fixed'] = make_grain_native.patch_fixed_grain(img, films, info, grains)
+        elif grain_fixed is not None:
+            # 兼容旧单值：全部胶片同一个颗粒值（0=Off 1=High 2=Mid 3=Low）
+            import make_grain_native
+            info['_grain_fixed'] = make_grain_native.patch_fixed_grain(img, films, info, [grain_fixed] * len(films))
+        elif grain_native:
             import make_grain_native
             info['_grain_storage'] = make_grain_native.patch_storage(img, films, info)
             info['_grain_pipeline'] = make_grain_native.patch_pipeline(img, films, info)
@@ -176,6 +186,7 @@ def build(in_path, out_path, films_order=None, raw_nr_above=8000,
             'rawdev': info.get('_rawdev'),
             'grain': info.get('_grain'),
             'grain_native': info.get('_grain_gate'),
+            'grain_fixed': info.get('_grain_fixed'),
             'grain_pipeline': info.get('_grain_pipeline'),
             'grain_storage': info.get('_grain_storage'),
             'grain_menu': info.get('_grain_menu'),
@@ -193,6 +204,8 @@ def main():
     raw_nr_above = 8000  # 默认与作者 build.sh 一致
     grain = None  # 机内颗粒强度：0-8，None=不动（走相机菜单默认）
     grain_native = False  # 原生颗粒引擎（Particle，作者 v27-v30 路线）
+    grain_fixed = None  # 固件写死颗粒强度：1=High 2=Mid 3=Low，直出带颗粒，无需机内设置
+    grains = None  # 固件写死颗粒（逐槽位）：逗号分隔，每槽位一个值（0=Off 1=High 2=Mid 3=Low）
     i = 0
     films_order = list(FILMS_ORDER)
     while i < len(args):
@@ -209,6 +222,13 @@ def main():
         elif a == '--grain-native':
             # 原生颗粒引擎（Particle，胶片复用机内「颗粒效果」菜单）
             grain_native = True; i += 1
+        elif a == '--grain-fixed':
+            # 固件写死颗粒：1=High 2=Mid 3=Low，相机直出即带颗粒（无菜单设置）
+            grain_fixed = int(args[i + 1]); i += 2
+        elif a == '--grains':
+            # 固件写死颗粒（逐槽位）：逗号分隔，如 "2,1,3,0" = Mid,High,Low,Off
+            grains = [int(x.strip()) for x in args[i + 1].split(',') if x.strip() != '']
+            i += 2
         elif a == '--slot':
             # 旧参数兼容：v16 不按槽位替换，忽略
             i += 2
@@ -229,7 +249,8 @@ def main():
     try:
         result = build(in_path, out_path, films_order=films_order,
                        raw_nr_above=raw_nr_above, grain=grain,
-                       grain_native=grain_native)
+                       grain_native=grain_native, grain_fixed=grain_fixed,
+                       grains=grains)
     except Exception as e:
         print(json.dumps({'error': str(e)}))
         sys.exit(1)

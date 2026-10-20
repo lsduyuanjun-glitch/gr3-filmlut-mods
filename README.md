@@ -3,7 +3,7 @@
 **English** | [简体中文](README.zh-CN.md)
 
 Custom film-simulation firmware tooling for the Ricoh GR III (fw 2.10): **Duccio's own film presets**
-(Kodak Vision3 5219, Vision3 5207, Portra 400) + a **native in-camera grain engine** + a **local web
+(Kodak Portra 400, Ektar 100, Vision3 5207, Vision3 5219) + a **native in-camera grain engine** + a **local web
 build tool**, producing flashable firmware fully offline.
 
 ## What this project is
@@ -19,7 +19,7 @@ base, three components are original work of this fork:
 - Fixes across the menu list, gate dispatch and RTOS space allocation; verified by offline emulation
 
 ### 2. Duccio film line (original data)
-- **Vision3 5219 (Night)**, **Vision3 5207 (Cinema)**, **Portra 400**
+- **Portra 400**, **Ektar 100**, **Vision3 5207 (Cinema)**, **Vision3 5219 (Night)**
 - Fit data comes from a self-built calibration pipeline (color-chart captures → .cube → 12-sector
   hue joint/lab fitting) — not derived from third-party LUTs
 - Each film carries its own look matrix, tone curves, post-curve 3x3 matrix and 12-sector hue
