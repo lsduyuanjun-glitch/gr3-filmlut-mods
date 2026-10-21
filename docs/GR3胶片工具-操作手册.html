@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GR III 胶片滤镜工具 · 操作手册（v1.5.2）</title>
+<style>
+  :root{
+    --ink:#2b2b2b; --line:#e3e0da; --muted:#8a857c; --accent:#a23b2e;
+    --ok:#2e7d4f; --warn:#c47d1a; --bg:#fff; --soft:#f7f6f3;
+  }
+  *{box-sizing:border-box}
+  body{max-width:820px;margin:0 auto;padding:48px 40px 80px;font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg)}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:.5px}
+  .sub{color:var(--muted);margin:0 0 28px;font-size:14px}
+  h2{font-size:21px;margin:42px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--accent);color:var(--accent)}
+  h3{font-size:17px;margin:26px 0 8px}
+  p{margin:10px 0}
+  ul,ol{margin:10px 0;padding-left:22px}
+  li{margin:6px 0}
+  code{background:var(--soft);padding:2px 6px;border-radius:5px;font-size:13px;border:1px solid var(--line)}
+  .step{display:flex;gap:14px;align-items:flex-start;margin:14px 0;padding:14px 16px;background:var(--soft);border:1px solid var(--line);border-radius:10px}
+  .step .n{flex:none;width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .step b{display:block;margin-bottom:4px}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--soft);font-weight:700}
+  .box{border-left:4px solid var(--warn);background:#fdf6ea;padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0}
+  .box.ok{border-color:var(--ok);background:#eef7f1}
+  .kbd{display:inline-block;background:#fff;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 7px;font-size:13px}
+  .pill{display:inline-block;background:var(--soft);border:1px solid var(--line);border-radius:20px;padding:2px 11px;font-size:12px;font-weight:600;color:var(--accent)}
+  footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+  @media print{body{padding:0;max-width:none}h2{page-break-after:avoid}.step,table,box{break-inside:avoid}}
+</style>
+</head>
+<body>
+
+<h1>GR III 胶片滤镜工具</h1>
+<p class="sub">操作手册 · 适用于 macOS 版 v1.5.2 · 适配理光 GR III / GR IIIx 官方固件 2.39</p>
+
+<p>本工具把「胶片滤镜」<b>烧录进相机固件</b>，刷机后相机<b>直出 JPG 就自带胶片色彩和颗粒</b>，无需手机、无需后期、也无需机内逐项调整。本手册面向把工具发给的最终用户，照着做即可。</p>
+
+<div class="box ok">
+<b>一句话流程：</b>打开工具 → 选好 6 个槽位装什么胶片、每槽颗粒强弱 → 点「生成固件」→ 改名 <code>fwdc239b.bin</code> 放 SD 卡根目录 → 相机关机、按住 <span class="kbd">MENU</span> 开机刷入。
+</div>
+
+<h2>一、使用前准备</h2>
+<ul>
+  <li><b>电脑：</b>macOS（Intel 或 Apple 芯片均可，安装包已含通用二进制）。</li>
+  <li><b>相机固件：</b>请确保相机为官方 <b>2.39</b> 版本（设置 → 固件版本可查）。本工具基于 2.39 修改，其它版本不保证可用。</li>
+  <li><b>备份（强烈建议）：</b>先在工具「固件」区下载一份官方 <code>.bin</code> 存好。万一想恢复，用同一份官方固件刷回即可，<b>不会变砖</b>。</li>
+  <li><b>SD 卡：</b>一张能插进相机、可在电脑读写的卡，用于传递固件文件。</li>
+</ul>
+
+<h2>二、三步上手</h2>
+
+<div class="step"><div class="n">1</div><div>
+<b>启动工具</b><br>
+双击 <code>GR3胶片工具.app</code>，会自动打开浏览器窗口。右上角有一个版本角标，显示 <span class="pill">v1.5.2</span> 即表示是最新版（若显示旧版本号，先重启电脑再开，或看第六节的「端口问题」）。
+</div></div>
+
+<div class="step"><div class="n">2</div><div>
+<b>配置槽位与颗粒</b><br>
+界面分三栏：<b>左栏胶片库</b>（所有可用胶片）、<b>中栏槽位详情</b>（选中某个槽位后，给它装胶片 + 选颗粒）、<b>右栏说明 / 解锁 / 新建</b>。<br>
+默认 6 个槽位已装好：<code>5207</code>（免费）、<code>Portra 400</code>、<code>Ektar 100</code>、<code>Kodak 5219</code>，外加 <b>2 个空槽位</b>可放你自己的胶片。
+</div></div>
+
+<div class="step"><div class="n">3</div><div>
+<b>生成并刷机</b><br>
+配置满意后，点「生成固件」，工具会产出 <code>gr3_film_mods_custom.bin</code>。下载它，<b>改名为 <code>fwdc239b.bin</code></b>，放到 SD 卡<b>根目录</b>。相机插卡、关机，<b>按住 <span class="kbd">MENU</span> 键不松，再开机</b>，按屏幕提示刷入即可。
+</div></div>
+
+<h2>三、功能详解</h2>
+
+<h3>3.1 胶片槽位（6 个）</h3>
+<p>相机菜单末尾会追加 6 个「新增影像控制项」槽位（位于官方「高对比黑白」之后）。每个槽位决定相机<b>直出</b>时套用哪款胶片。</p>
+<table>
+<tr><th>槽位</th><th>默认胶片</th><th>说明</th></tr>
+<tr><td>槽位 1</td><td>Kodak 5207（免费）</td><td>开箱即用，无需解锁</td></tr>
+<tr><td>槽位 2</td><td>Portra 400</td><td>需解锁码（见 3.4）</td></tr>
+<tr><td>槽位 3</td><td>Ektar 100</td><td>需解锁码</td></tr>
+<tr><td>槽位 4</td><td>Kodak 5219</td><td>需解锁码</td></tr>
+<tr><td>槽位 5、6</td><td>空</td><td>可上传你自己的 CUBE / XMP 自制胶片</td></tr>
+</table>
+<p>在中栏选中某槽位 → 「滤镜胶卷」下拉里挑一款胶片即可换装。同一款胶片被两个槽位占用时会自动交换位置。</p>
+
+<h3>3.2 逐槽颗粒（核心功能）</h3>
+<p>每个槽位详情里都有独立的<b>「颗粒强度」</b>下拉，四档：</p>
+<table>
+<tr><th>档位</th><th>效果</th></tr>
+<tr><td>无颗粒</td><td>干净，无叠加</td></tr>
+<tr><td>Low（弱）</td><td>极细颗粒，几乎不可见，适合 Portra 400 / Ektar 100 这类细颗粒片</td></tr>
+<tr><td>Mid（中）</td><td>中等颗粒，接近 5207 日光片质感（默认档）</td></tr>
+<tr><td>High（强）</td><td>粗颗粒，接近 5219 钨丝灯片 / 迫冲的感觉</td></tr>
+</table>
+<div class="box">
+<b>颗粒是「烧进固件」的：</b>选好后随固件一起烘焙，相机<b>直出 JPG 就带颗粒</b>，<b>换滤镜、关机重开都不会丢</b>。颗粒只在 JPEG 直出上生效，RAW 文件不受影响（RAW 可回放做影像控制）。
+</div>
+
+<h3>3.3 自定义胶片与图标</h3>
+<ul>
+  <li><b>新建胶片：</b>右栏「新建胶片」上传你的 <code>.CUBE</code> 或 <code>.XMP</code>，填英文名（机内只支持英文/数字），即可生成一款自制胶片，放进槽位 5、6。</li>
+  <li><b>自定义图标：</b>在左栏胶片库里，点某款自制胶片的「图标」按钮，上传一张图片作为机内图标（约 40×40）。重新生成并刷机后生效。</li>
+  <li><b>改名 / 删除：</b>左栏同名按钮可对自制胶片改名或删除（内置 4 款不可删）。</li>
+</ul>
+
+<h3>3.4 解锁付费胶片</h3>
+<p>Portra 400 / Ektar 100 / Kodak 5219 为付费款，在右栏输入你获得的解锁码即永久解锁，无需重复输入。</p>
+
+<h2>四、刷机与回刷</h2>
+<h3>刷入自制固件</h3>
+<ol>
+  <li>工具里点「生成固件」，下载 <code>gr3_film_mods_custom.bin</code>。</li>
+  <li>改名为 <code>fwdc239b.bin</code>（必须这个名）。</li>
+  <li>拷到 SD 卡<b>根目录</b>（不要放进文件夹）。</li>
+  <li>相机插入 SD 卡，关机。</li>
+  <li><b>按住 MENU 键不放，同时开机</b>，屏幕出现固件更新提示，按提示确认。</li>
+  <li>刷完开机，菜单里就能看到新增的胶片槽位。</li>
+</ol>
+<h3>恢复到官方固件</h3>
+<p>在工具「固件」区下载官方 <code>.bin</code>，同样改名 <code>fwdc239b.bin</code>、放 SD 卡根目录，用上面的 MENU 开机法刷入即可 100% 还原官方状态。本操作可随时来回切换。</p>
+
+<div class="box">
+<b>安全说明：</b>工具修改的是固件内的影像处理参数，不涉及底层 Bootloader。保留官方 <code>.bin</code> 备份即可随时回刷，正常操作不会损坏相机。刷机过程请保证电量充足。
+</div>
+
+<h2>五、实拍验证</h2>
+<ul>
+  <li>刷机后，对某个已设颗粒的槽位拍一张 <b>JPEG</b>，放大看应能看到对应强弱的颗粒。</li>
+  <li>若看不出颗粒：确认该槽位颗粒档不是「无颗粒」；确认拍的是 JPEG 而非 RAW；确认刷的是最新生成的固件。</li>
+  <li>不同光线/ISO 下颗粒观感会有差异，属正常现象。</li>
+</ul>
+
+<h2>六、常见问题</h2>
+
+<h3>Q1：打开后界面像是旧版本 / 没变化？</h3>
+<p>工具后台服务占用了固定端口（8310）。如果之前开过旧版本、又没关，新版本会自动接管；极少数情况下旧进程残留，表现为页面不更新。处理：<b>重启电脑</b>再开工具最稳妥；或在「活动监视器」里结束名为 <code>GR3胶片工具</code> / <code>python</code> 的进程后重开。也可在浏览器按 <span class="kbd">Cmd</span>+<span class="kbd">Shift</span>+<span class="kbd">R</span> 强制刷新。右上角版本角标能帮你确认当前到底是哪个版本。</p>
+
+<h3>Q2：胶片库列表里 ΔE、按钮挤在一起？</h3>
+<p>这是旧版本的界面重叠问题，v1.5.2 已修复为自动换行，空间不够时按钮会掉到下一行。请使用 v1.5.2 及以上。</p>
+
+<h3>Q3：颗粒不生效？</h3>
+<p>检查：① 该槽位颗粒档 ≠「无颗粒」；② 拍的是 JPEG 直出；③ 刷的是带颗粒设置的那次生成的固件；④ 角标版本正确。仍无效请把样张发回排查。</p>
+
+<h3>Q4：机内图标出现豆腐块 / 乱码？</h3>
+<p>机内图标与菜单只支持英文/数字，胶片名或短码含中文会导致此问题。改名只用英文/数字即可。</p>
+
+<h2>七、版本说明</h2>
+<p>本手册对应 <span class="pill">v1.5.2</span>：修复胶片库列表 ΔE 徽章与操作按钮重叠的布局问题，并保留自动接管端口、右上角实时版本角标等能力。逐槽颗粒与自定义图标功能自 v1.5.0 起提供。</p>
+
+<footer>
+GR III 胶片滤镜工具 · 操作手册 · v1.5.2<br>
+本工具仅供个人学习交流，刷机风险自担；请保留官方固件备份以便随时回刷。
+</footer>
+
+</body>
+</html>
