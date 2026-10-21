@@ -67,6 +67,9 @@ jobs:
     needs: package
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # 创建 Release 需要向仓库写入内容的权限；默认 GITHUB_TOKEN 没有，必须显式授予
+    permissions:
+      contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
