@@ -95,8 +95,8 @@ def ensure_user_dirs():
     return USER_DIR
 
 
-def _fw_sha_ok(p):
-    """固件是否为 GR III 2.10 官方原件（按 SHA256 判定）。
+def _fw_sha_ok(p, expected_sha=None):
+    """固件是否为对应机型的官方原件（按 SHA256 判定，默认 GR III 2.10）。
 
     只按文件名找固件是不够的：用户目录里可能存着「已被改过」的同名副本
     （例如自己上次生成的结果被命名为 fwdc239b.bin），一选它就会报
@@ -109,26 +109,26 @@ def _fw_sha_ok(p):
         with open(p, 'rb') as f:
             for chunk in iter(lambda: f.read(1 << 20), b''):
                 h.update(chunk)
-        return h.hexdigest() == OFFICIAL_FW_SHA
+        return h.hexdigest() == (expected_sha or OFFICIAL_FW_SHA)
     except Exception:
         return False
 
 
-def find_firmware():
-    """定位官方固件 fwdc239b.bin（GR III 2.10）。
+def find_firmware(model_id='gr3'):
+    """定位指定机型的官方固件（按机型注册表的 SHA256 识别，不靠文件名）。
 
-    只读资源里不随包分发官方固件（理光不允许转发），所以按用户常见位置逐个找：
-      1. 环境变量 GR3_FW 显式指定
-      2. 用户数据目录 official_firmware/
-      3. app 资源目录 official_firmware/
-      4. 桌面 / 下载 目录（含其下一级子目录，覆盖「GR3魔改固件/官方固件」这类归档习惯）
-
-    两趟扫描：先找 SHA256 正确的官方原件；全都不是时才退回「按文件名命中」的
-    候选（调用方会给出「固件不匹配」的明确报错，比静默失败好）。
-    返回路径字符串；找不到时返回约定路径，供调用方判断并给出清晰提示。
+    默认 model_id='gr3' —— 与旧行为一致。识别靠 SHA 而非文件名，因此无论用户把
+    固件命名成什么，都会自动挑出对应机型的正确官方原件（与 GRMod / models.py 同思路）。
     """
+
+    # 搜索顺序不变：GR3_FW 环境变量 → 用户/资源 official_firmware/ → 桌面/下载目录
+    # 两趟扫描：先找 SHA256 正确的官方原件；全都不是时才退回「按文件名命中」的候选。
     if os.environ.get('GR3_FW'):
         return os.path.abspath(os.environ['GR3_FW'])
+
+    # 该机型已知官方固件 SHA（识别靠它，不靠文件名）
+    import models  # 延迟导入，避免模块加载顺序问题
+    expected = models.expected_sha(model_id) or OFFICIAL_FW_SHA
 
     names = ('fwdc239b.bin', 'fwdc239b_GR3_2.10_official.bin', 'fwdc239b_GR3_2.10.bin')
 
@@ -185,9 +185,9 @@ def find_firmware():
             seen.add(p)
             uniq.append(p)
 
-    # 第一趟：SHA 正确的官方原件优先
+    # 第一趟：SHA 正确的官方原件优先（按机型 SHA 识别）
     for p in uniq:
-        if _fw_sha_ok(p):
+        if _fw_sha_ok(p, expected):
             return p
     # 第二趟：退化为首个文件名命中者（调用方会报「固件不匹配」）
     if uniq:

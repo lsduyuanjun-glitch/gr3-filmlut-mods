@@ -19,6 +19,7 @@
 import sys, os, json, hashlib
 
 import paths  # noqa: E402  (同目录；统一路径解析)
+import models  # noqa: E402  (同目录；机型注册表)
 
 # —— 路径解析 ——
 # RESOURCE：只读资源（引擎 .py、work/ 拟合数据、third_party）
@@ -72,12 +73,17 @@ def load_film(name):
 
 
 def build(in_path, out_path, films_order=None, raw_nr_above=8000,
-          grain=None, grain_native=False, grain_fixed=None, grains=None):
+          grain=None, grain_native=False, grain_fixed=None, grains=None,
+          model='gr3'):
     """核心构建逻辑（可 import，供 server.py 进程内调用）。
 
     返回 result dict；出错时 raise（带明确信息）。不依赖 sys.argv / print / sys.exit。
+
+    model: 机型 id（默认 'gr3'）。未支持机型会被 models.require_supported 直接拦截，
+           绝不静默产出错误固件。
     """
     films_order = list(films_order or FILMS_ORDER)
+    spec = models.require_supported(model)  # 闸门：未支持机型直接报错
 
     if not in_path or not out_path:
         raise ValueError('缺少输入/输出路径')
@@ -95,11 +101,12 @@ def build(in_path, out_path, films_order=None, raw_nr_above=8000,
         #   （新建胶片、改图标），而 make_slots15 在首次 import 时只读了一次。
         M15._load_custom_films()
 
-        # 校验固件 SHA
+        # 校验固件 SHA（按机型查注册表，支持 GR III 全家族）
         sha = hashlib.sha256(open(in_path, 'rb').read()).hexdigest()
-        expected = 'd6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4'
-        if sha != expected:
-            raise ValueError(f'固件不匹配！期望 GR III 2.10 (fwdc239b.bin)，实际 SHA {sha[:16]}...')
+        if sha != spec.official_firmware_sha256:
+            raise ValueError(
+                f'固件不匹配！期望 {spec.display_name} {spec.official_firmware_version} '
+                f'官方固件，实际 SHA {sha[:16]}...')
 
         # 构造 films 列表：(key, display_name, fit, replaced_stock_tone_or_None)
         films = []
@@ -208,6 +215,7 @@ def main():
     grains = None  # 固件写死颗粒（逐槽位）：逗号分隔，每槽位一个值（0=Off 1=High 2=Mid 3=Low）
     i = 0
     films_order = list(FILMS_ORDER)
+    model = models.DEFAULT_MODEL  # 机型 id，默认 GR III
     while i < len(args):
         a = args[i]
         if a == '--raw-nr-above':
@@ -232,6 +240,9 @@ def main():
         elif a == '--slot':
             # 旧参数兼容：v16 不按槽位替换，忽略
             i += 2
+        elif a == '--model':
+            # 机型 id（gr3 / gr3x / gr3hdf / gr3xhdf）；未支持机型构建时会报错
+            model = args[i + 1]; i += 2
         elif a in ('--icon', '--label'):
             # v16 管线暂不支持自定义图标 / 机内名，忽略旧参数
             i += 2
@@ -250,7 +261,7 @@ def main():
         result = build(in_path, out_path, films_order=films_order,
                        raw_nr_above=raw_nr_above, grain=grain,
                        grain_native=grain_native, grain_fixed=grain_fixed,
-                       grains=grains)
+                       grains=grains, model=model)
     except Exception as e:
         print(json.dumps({'error': str(e)}))
         sys.exit(1)

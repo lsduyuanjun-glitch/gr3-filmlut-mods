@@ -135,10 +135,14 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(404, '<h1>index.html 未找到</h1>', 'text/html')
         elif path == '/status':
+            import models as _models
+            fw_models = {m[0]: os.path.exists(paths.find_firmware(m[0])) for m in _models.list_models()}
             self._send(200, json.dumps({
                 'version': APP_VERSION,
                 'fw_ready': os.path.exists(FW),
                 'fw_path': FW,
+                'models': _models.list_models(),
+                'fw_by_model': fw_models,
                 'user_dir': USER_DIR,
                 'outputs': [OUT_NAME],
             }))
@@ -357,11 +361,25 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, json.dumps(r))
 
     def _handle_build(self, data):
-        if not os.path.exists(FW):
+        # 机型：默认 GR III；未支持机型直接拒绝（绝不静默产出错误固件）
+        import models
+        model = data.get('model') or 'gr3'
+        spec = models.get_model(model)
+        if not spec.supported:
             self._send(400, json.dumps({
-                'error': '找不到官方固件 fwdc239b.bin（GR III 2.10）',
-                'hint': f'请把 fwdc239b.bin 放到：{paths.USER_FW_DIR}',
-                'fw_path': FW,
+                'error': f'机型「{spec.display_name}」尚未开放',
+                'hint': spec.note or '该机型待逆向，暂不可用',
+                'model': spec.id,
+            }))
+            return
+
+        # 按机型定位官方固件（SHA 识别）
+        fw_path = paths.find_firmware(model)
+        if not os.path.exists(fw_path):
+            self._send(400, json.dumps({
+                'error': f'找不到 {spec.display_name}（{spec.official_firmware_version}）官方固件',
+                'hint': f'请把对应机型的官方固件放到：{paths.USER_FW_DIR}',
+                'fw_path': fw_path,
             }))
             return
 
@@ -406,16 +424,16 @@ class Handler(BaseHTTPRequestHandler):
             if grains is not None:
                 # 对齐长度：补齐/截断到 len(films_order)
                 grains = (grains + [2] * len(films_order))[:len(films_order)]
-                result = bf.build(FW, OUT_PATH, films_order=films_order, grains=grains)
+                result = bf.build(fw_path, OUT_PATH, films_order=films_order, grains=grains, model=model)
             elif grain_fixed is not None and grain_fixed > 0:
                 # 固件写死颗粒（1=High 2=Mid 3=Low）
-                result = bf.build(FW, OUT_PATH, films_order=films_order, grain_fixed=grain_fixed)
+                result = bf.build(fw_path, OUT_PATH, films_order=films_order, grain_fixed=grain_fixed, model=model)
             elif grain_fixed == 0:
                 # 无颗粒
-                result = bf.build(FW, OUT_PATH, films_order=films_order)
+                result = bf.build(fw_path, OUT_PATH, films_order=films_order, model=model)
             else:
                 # 可调颗粒（机内菜单）
-                result = bf.build(FW, OUT_PATH, films_order=films_order, grain_native=True)
+                result = bf.build(fw_path, OUT_PATH, films_order=films_order, grain_native=True, model=model)
         except Exception as e:
             self._send(500, json.dumps({'error': '生成失败', 'stderr': str(e)[-2000:]}))
             return

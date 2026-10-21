@@ -252,6 +252,9 @@
         <div class="field-label">输出文件</div>
         <input class="inp" value="gr3_film_mods_custom.bin" readonly style="margin-bottom:10px">
         <div class="mini-note">6 个胶片追加为「新增影像控制项」，官方模式逐字节保留</div>
+        <div class="field-label" style="margin-top:10px">机型</div>
+        <select id="modelSel" class="inp" style="margin-bottom:6px" onchange="refreshModelUI()"></select>
+        <div class="mini-note" id="modelNote"></div>
         <div class="mini-note" style="margin-top:10px;margin-bottom:10px">颗粒在<b>中栏每个槽位详情</b>里逐槽选择（无 / Low / Mid / High），烘焙进固件、相机直出就带颗粒，换滤镜也不丢。</div>
         <button class="btn btn-dark btn-block build-cta" id="buildBtn" onclick="build()">生成固件</button>
         <div id="buildStatus" style="margin-top:10px"></div>
@@ -630,6 +633,22 @@
     renderDetail();   // 保持当前槽位选中，刷新胶片展示
   }
 
+  /* 机型选择器：从 /status 的 models 列表填充；未支持机型置灰 */
+  let _statusD = null;
+  function refreshModelUI() {
+    const ms = document.getElementById('modelSel');
+    if (!ms || !_statusD || !_statusD.models) return;
+    const cur = ms.value || 'gr3';
+    ms.innerHTML = _statusD.models.map(([id, name, family, supported]) =>
+      `<option value="${id}" ${id === cur ? 'selected' : ''} ${supported ? '' : 'disabled'}>${name}${supported ? '' : '（敬请期待）'}</option>`).join('');
+    const sel = ms.value || 'gr3';
+    const mn = document.getElementById('modelNote');
+    if (mn) {
+      const ready = _statusD.fw_by_model && _statusD.fw_by_model[sel];
+      mn.textContent = ready ? `已检测到 ${sel} 官方固件` : '请放入对应机型的官方固件（GR IIIx / HDF 系列待开放）';
+    }
+  }
+
   /* ===== 状态 ===== */
   async function checkStatus() {
     try {
@@ -646,6 +665,8 @@
                                     : ('未找到固件。请放到任意位置后点「重新检测」，或放到：'
                                        + (d.user_dir || '') + '/official_firmware/');
       }
+      _statusD = d;
+      refreshModelUI();
       if (d.fw_ready) {
         dot.className = 'dot ok'; txt.textContent = '环境就绪';
         hideFwGuide();
@@ -727,6 +748,7 @@
       const assigned = SLOT_ASSIGN.map((k, i) => ({ k, g: SLOT_GRAIN[i] })).filter(x => x.k);
       const payload = {
         out_name: 'gr3_film_mods_custom.bin',
+        model: document.getElementById('modelSel').value || 'gr3',
         films: assigned.map(x => x.k),
         grains: assigned.map(x => x.g),
       };
