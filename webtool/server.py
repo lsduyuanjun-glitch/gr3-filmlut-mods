@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import base64
+import time
 import threading
 import webbrowser
 import subprocess
@@ -564,26 +565,19 @@ def _probe_version():
         return None
 
 
-def main():
-    # 端口占用时的处理（自动、不弹窗、不要求用户手动杀进程）：
-    # ① 健康实例（/ 返回正常页面）→ 直接开浏览器，复用已有实例；
-    # ② 失效旧进程（用户把旧 app 丢进废纸篓/删除，但进程没退，/ 返回 404）→
-    #    自动 kill 它，稍等重试绑定，随后正常启动接管端口。
-    #    —— 之前版本在这里弹窗让用户去活动监视器手动杀进程，对用户太不友好，
-    #      反而成了「程序打不开」的元凶，已改为自动清理。
+def _make_server():
+    """创建 HTTPServer 并处理端口冲突（复用同版本实例 / 清理失效旧进程）。
+
+    返回 server 对象；若命中「同版本健康实例可复用」或端口彻底不可用，返回 None。
+    """
     for _attempt in range(2):
         try:
-            server = HTTPServer(('127.0.0.1', PORT), Handler)
-            break
+            return HTTPServer(('127.0.0.1', PORT), Handler)
         except OSError:
             _ver = _probe_version()
             if _ver == APP_VERSION:
-                # 同版本健康实例 → 复用（用户只是重复双击同一个版本）
-                print(f'本工具已在运行（端口 {PORT}），直接打开浏览器窗口。')
-                _open_browser()
-                import time
-                time.sleep(3)
-                return
+                # 同版本健康实例 → 交给调用方决定复用（开浏览器 / 开原生窗口）
+                return None
             # 不同版本 / 失效旧进程 → 自动终止后重试，接管端口
             pid = _port_owner_pid()
             print(f'检测到旧版本实例（版本 {_ver or "?"}）占用端口 {PORT}，自动清理升级（PID {pid or "?"}）…')
@@ -592,19 +586,46 @@ def main():
                     subprocess.run(['kill', str(pid)], timeout=5)
                 except Exception:
                     pass
-            import time
             time.sleep(1)
-    else:
-        print(f'端口 {PORT} 清理后仍被占用，请重启电脑后重试。')
-        import time
-        time.sleep(3)
+    return None
+
+
+def run_server():
+    """在后台线程启动 HTTP 服务（供原生窗口壳 app.py 调用）。
+
+    返回 server 对象；若为复用现有实例（同版本已在跑）或端口不可用，返回 None。
+    调用方据此决定：复用 → 直接把窗口指向现有端口；不可用 → 提示用户。
+    """
+    srv = _make_server()
+    if srv is None:
+        return None
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def main():
+    # 端口占用时的处理（自动、不弹窗、不要求用户手动杀进程）：
+    # ① 健康实例（/ 返回正常页面）→ 直接开浏览器，复用已有实例；
+    # ② 失效旧进程（用户把旧 app 丢进废纸篓/删除，但进程没退，/ 返回 404）→
+    #    自动 kill 它，稍等重试绑定，随后正常启动接管端口。
+    #    —— 之前版本在这里弹窗让用户去活动监视器手动杀进程，对用户太不友好，
+    #      反而成了「程序打不开」的元凶，已改为自动清理。
+    srv = _make_server()
+    if srv is None:
+        if _probe_version() == APP_VERSION:
+            print(f'本工具已在运行（端口 {PORT}），直接打开浏览器窗口。')
+            _open_browser()
+            time.sleep(3)
+        else:
+            print(f'端口 {PORT} 仍被占用（且非本工具实例），请重启电脑后重试。')
+            time.sleep(3)
         return
     _open_browser()
     print(f'GR3 胶片滤镜工具已启动: http://localhost:{PORT}')
     print(f'用户数据目录: {USER_DIR}')
     print(f'官方固件: {FW}（{"已就绪" if os.path.exists(FW) else "未找到"}）')
     try:
-        server.serve_forever()
+        srv.serve_forever()
     except KeyboardInterrupt:
         print('\n已停止')
 

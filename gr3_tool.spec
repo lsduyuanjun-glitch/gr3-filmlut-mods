@@ -50,10 +50,10 @@ datas = [
 #   codec_path.py / gr3_tmp.py 靠 __file__ 定位同目录依赖，平铺后路径推导才成立
 # 跳过：以 . 或 _ 开头的（下划线是本地诊断/测试脚本，不随包分发）
 for f in sorted(os.listdir(REPO)):
-    if f.endswith('.py') and not f.startswith(('.', '_')) and f != 'server.py':
+    if f.endswith('.py') and not f.startswith(('.', '_')) and f != 'app.py':
         datas.append((f, '.'))
 
-for f in ('build_firmware.py', 'film_library.py', 'license.py', 'paths.py'):
+for f in ('build_firmware.py', 'film_library.py', 'license.py', 'paths.py', 'server.py'):
     datas.append((os.path.join('webtool', f), '.'))
 
 # 初始胶片库（首次运行时播种到用户目录）
@@ -83,6 +83,11 @@ hiddenimports = [
     'tifffile', 'colour',
     # 反汇编 / 模拟（verify 用）
     'capstone', 'unicorn', 'unicorn.arm_const', 'unicorn.arm64_const',
+    # 原生窗口壳（PyWebview + PyObjC 的 Cocoa/WebKit 后端）
+    'webview', 'webview.platforms.cocoa', 'webview.http',
+    'bottle', 'proxy_tools',
+    'objc', 'PyObjCTools', 'PyObjCTools.AppHelper',
+    'Cocoa', 'WebKit', 'Quartz', 'Security', 'UniformTypeIdentifiers',
 ]
 
 # ————————————————————————————————————————————————
@@ -112,7 +117,7 @@ excludes = [
 ]
 
 a = Analysis(
-    [os.path.join('webtool', 'server.py')],
+    [os.path.join('webtool', 'app.py')],
     pathex=[REPO, WEBTOOL, os.path.join(REPO, 'third_party', 'gr-custom-tool')],
     binaries=[],
     datas=datas,
