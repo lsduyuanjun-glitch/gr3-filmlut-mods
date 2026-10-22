@@ -70,9 +70,11 @@ jobs:
           # 由 build/ 的 warn 日志确认其已被收集；此处只校验「以数据文件形式平铺进包」的文件。
           required_basenames = [
               'index.html', 'make_slots15.py', 'make_slots16.py', 'make_grain_native.py',
-              'make_grain.py', 'gr3patch.py', 'armasm.py', 'codec_path.py', 'film_pipeline.py',
-              'gr3_tmp.py', 'build_firmware.py', 'paths.py', 'server.py', 'license.py',
-              'film_library.py', 'film_library.json',
+              'make_grain.py', 'gr3patch.py', 'armasm.py', 'armmini.py', 'codec_path.py',
+              'film_pipeline.py', 'gr3_tmp.py', 'build_firmware.py', 'paths.py', 'server.py',
+              'license.py', 'film_library.py', 'film_library.json',
+              # 构建后自动核验链（verify_slots16 → emu → fw → run_tuning → make_film）
+              'verify_slots16.py', 'emu.py', 'run_tuning.py', 'fw.py', 'make_film.py',
               # 构建必需的拟合数据
               'portra400.json', 'ektar100.json', '5207.json', '5219.json',
               'gr4_std_ma.json', 'base_gamma_std.npy',

@@ -36,31 +36,16 @@ See `Mac使用说明.txt` (install Python → run the dependency installer → d
 firmware → double-click the launcher). Requires your own Ricoh official firmware `fwdc239b.bin`
 (2.10). This repository does not include or distribute any Ricoh firmware.
 
-## Dependency: LLVM clang (required for firmware build)
+## Dependency: none (built-in ARM assembler)
 
-Building firmware requires **clang (LLVM)** to assemble the ARM patches (grain engine, etc.).
-The tool looks it up in this order: `CLANG` environment variable → `PATH` → common install
-locations (e.g. `C:\Program Files\LLVM\bin\clang.exe` on Windows).
+Since v1.5.5, ARM instruction assembly for firmware builds is done by a **built-in pure-Python
+assembler** (armmini), verified byte-for-byte identical to clang across all real build call sites.
+**No LLVM/clang install is required on any platform.**
 
-**Windows** (either one):
-
-```bat
-winget install LLVM.LLVM
-```
-
-or grab `clang+llvm-…-x86_64-pc-windows-msvc` from the
-[LLVM Releases](https://github.com/llvm/llvm-project/releases) page and tick **"Add LLVM to
-system PATH"** during setup. Reopen the terminal afterwards.
-
-If clang is installed but not on PATH:
-
-```bat
-set CLANG=C:\Program Files\LLVM\bin\clang.exe
-```
-
-**macOS**: `xcode-select --install` (or `brew install llvm`). **Linux**: `sudo apt install clang`.
-
-When clang is missing, the tool prints these install instructions instead of a cryptic error.
+If an instruction ever falls outside the built-in subset, the tool transparently falls back to
+clang (optional): looked up via the `CLANG` environment variable → `PATH` → common install
+locations (e.g. `C:\Program Files\LLVM\bin\clang.exe` on Windows). When clang is missing and a
+fallback is needed, the tool prints install instructions instead of a cryptic error.
 
 ## License (by part)
 

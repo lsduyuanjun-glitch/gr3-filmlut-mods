@@ -28,29 +28,14 @@
 见 `Mac使用说明.txt`(装 Python → 双击安装依赖 → 放官方固件 → 双击启动)。
 需要自备理光官方固件 `fwdc239b.bin`(2.10),本仓库不包含、也不分发任何理光固件。
 
-## 依赖:LLVM clang(生成固件必需)
+## 依赖:无需任何外部编译器(内置 ARM 汇编器)
 
-生成固件时需要用 **clang(LLVM)** 汇编 ARM 指令(颗粒引擎等底层补丁)。工具会按以下顺序自动查找:
-`CLANG` 环境变量 → PATH → 常见安装位置(Windows 的 `C:\Program Files\LLVM\bin\clang.exe` 等)。
+从 v1.5.5 起,生成固件所需的 ARM 指令汇编由**内置纯 Python 汇编器**(armmini)完成,
+与 clang 输出逐字节一致(已对全部真实调用点做差分验证)。**三大平台都无需安装 LLVM/clang**。
 
-**Windows 安装**(任选其一):
-
-```bat
-winget install LLVM.LLVM
-```
-
-或到 [LLVM Releases](https://github.com/llvm/llvm-project/releases) 下载 `clang+llvm-…-x86_64-pc-windows-msvc` 安装包,安装时勾选 **"Add LLVM to system PATH"**。装完重开终端。
-
-已安装但不想加 PATH 的话,启动前设置环境变量即可:
-
-```bat
-set CLANG=C:\Program Files\LLVM\bin\clang.exe
-```
-
-**macOS**:`xcode-select --install`(或 `brew install llvm`)。
-**Linux**:`sudo apt install clang`。
-
-缺少 clang 时,工具会直接提示上述安装方法,而不是抛出看不懂的报错。
+若某条指令超出内置汇编器子集,工具会自动回退到 clang(可选):按 `CLANG` 环境变量 →
+PATH → 常见安装位置(Windows 的 `C:\Program Files\LLVM\bin\clang.exe` 等)查找。
+缺 clang 且需要回退时,工具会直接提示安装方法,而不是抛出看不懂的报错。
 
 ## 许可(按部分)
 

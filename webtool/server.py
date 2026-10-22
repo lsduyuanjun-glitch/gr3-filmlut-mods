@@ -59,7 +59,7 @@ CUBE_DIR = paths.CUBE_DIR
 # ★ 版本号：启动时探测「占用端口的旧进程」是否同版本；不同版本（旧 App 还在跑）就自动
 #   kill 它再接管端口。否则用户解压新 App 双击，新进程会因端口被旧进程占用而「复用旧实例」，
 #   浏览器永远显示旧界面（用户反复遇到的「和之前没区别」）。
-APP_VERSION = '1.5.2'
+APP_VERSION = '1.5.5'
 
 
 def _open_browser():
@@ -441,19 +441,57 @@ class Handler(BaseHTTPRequestHandler):
 
         # 构建成功后自动核验（进程内；核验失败不影响产出，只影响「可下载」状态）
         try:
-            verify = self._verify_firmware(OUT_PATH, films_order)
+            verify = self._verify_firmware(OUT_PATH, films_order, fw_path=fw_path)
         except Exception as e:
             verify = {'ok': False, 'detail': f'核验异常：{str(e)[-200:]}'}
         result['verify'] = verify
 
         self._send(200, json.dumps(result))
 
-    def _verify_firmware(self, out_path, films_order=None):
+    @staticmethod
+    def _ensure_rtos_for_verify(fw_path):
+        """核验链（verify_slots16 → emu → fw）需要官方固件的 RTOS 段作仿真底版。
+
+        该数据是官方固件的提取物，按版权红线**不随包分发**；改为运行时从
+        用户自带的官方固件里提取，写入用户数据目录，并用 GR3_WORK 环境变量
+        告知 fw.py（fw.py 在 import 时读 GR3_WORK）。
+        提取成功返回 None；失败返回错误说明。
+        """
+        import codec_path  # noqa: F401  (gr4_editor 路径)
+        from gr4_editor.codec.container import inspect_container
+        from gr4_editor.codec.frames import decode_payload, section_rows
+
+        root = os.path.join(paths.USER_DIR, 'fw_runtime')
+        out_dir = os.path.join(root, 'fw')
+        out_path = os.path.join(out_dir, 'rtos.bin')
+        if os.path.isfile(out_path) and os.path.getsize(out_path) > (1 << 20):
+            os.environ['GR3_WORK'] = root
+            return None
+        with open(fw_path, 'rb') as f:
+            raw = f.read()
+        info = inspect_container(raw)
+        dec, _ = decode_payload(raw[128:info['payload_end']], info['decoded_size'])
+        rows = {r['name']: r for r in section_rows(dec)}
+        rt = rows.get('RTOS')
+        if rt is None:
+            return '官方固件解码后没有 RTOS 段，无法核验'
+        os.makedirs(out_dir, exist_ok=True)
+        with open(out_path, 'wb') as f:
+            f.write(bytes(dec[rt['start'] + 16:rt['end']]))  # 前 16 字节是段头，emu 用的是纯镜像
+        os.environ['GR3_WORK'] = root
+        return None
+
+    def _verify_firmware(self, out_path, films_order=None, fw_path=None):
         """自动核验 v16 固件完整性，返回 {ok, detail}。进程内执行 verify_slots16。"""
         import io
         import contextlib
         import runpy
         import json as _j
+
+        if fw_path:
+            err = self._ensure_rtos_for_verify(fw_path)
+            if err:
+                return {'ok': False, 'detail': err}
 
         fits_dir = paths.RES_FITS_V16
         film_order = films_order or ['portra400', 'ektar100', '5207', '5219']

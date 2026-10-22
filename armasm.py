@@ -122,6 +122,15 @@ def assemble(src, base):
             fixed.append(f'{m.group(1) or ""}.word {word:#x}')
         else:
             fixed.append(l)
+    # 首选内置纯 Python 汇编器（零外部依赖，与 clang 逐字节一致——已对全部真实
+    # 调用点做差分验证）。超出内置子集的形态回退到 clang（若有）。
+    try:
+        import armmini
+        return armmini.assemble_lines(fixed, base)
+    except ImportError:
+        pass
+    except armmini.Unsupported:
+        pass  # 落到 clang 路径
     with gr3_tmp.temp_dir('asm-') as d:
         s, o = (os.path.join(d, n) for n in ('a.s', 'a.o'))
         with open(s, 'w') as f:
