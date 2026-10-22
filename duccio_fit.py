@@ -159,6 +159,17 @@ def de2000(a, b):
     return colour.delta_E(lab(a), lab(b), method='CIE 2000')
 
 
+def split_spec(s):
+    """把 'path[:ev]' 拆成 (path, ev:float)。兼容 Windows 盘符冒号（C:\\...）。"""
+    path, _, ev = s.rpartition(':')
+    if path and ev:
+        try:
+            return path, float(ev)
+        except ValueError:
+            pass
+    return s, 0.0
+
+
 if __name__ == '__main__':
     args = sys.argv[1:]
     if args[0] == '--boost':
@@ -167,8 +178,8 @@ if __name__ == '__main__':
     out, in_cs, specs = args[0], args[1], args[2:]
     targets = []
     for s in specs:
-        path, _, ev = s.partition(':')
-        targets.append(load_target(path, in_cs, float(ev or 0)))
+        path, ev = split_spec(s)
+        targets.append(load_target(path, in_cs, ev))
     M, curves, chart = fit(targets)
     std = np.stack([base_gamma((chart @ STD_LOOK.T)[:, c]) for c in range(3)], 1) / 16384
     report = []

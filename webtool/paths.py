@@ -29,7 +29,9 @@ def _resource_dir():
     if getattr(sys, 'frozen', False):
         exe_dir = os.path.dirname(os.path.abspath(sys.executable))
         # macOS .app：可执行文件在 Contents/MacOS/，资源在 Contents/Frameworks/
+        # 或 Contents/Resources/（PyInstaller BUNDLE 把 datas 放 Resources）
         for cand in (os.path.join(exe_dir, '..', 'Frameworks'),
+                     os.path.join(exe_dir, '..', 'Resources'),
                      os.path.join(exe_dir, '_internal'),
                      getattr(sys, '_MEIPASS', '') or exe_dir,
                      exe_dir):

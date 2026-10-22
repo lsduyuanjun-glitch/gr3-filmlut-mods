@@ -4,7 +4,7 @@ when target is orange-ward) on a held-out warm set, plus dE2000 on the chart (5 
 Usage: eval_warm.py fit.json [fit.json ...]   (cube taken from the fit's first preset spec)"""
 import sys, json
 import numpy as np, colour
-from cube_fit import load_target, model, warm_samples, samples, de2000
+from cube_fit import load_target, model, warm_samples, samples, de2000, split_spec
 
 def lab(x): return colour.XYZ_to_Lab(colour.sRGB_to_XYZ(np.clip(x, 0, 1)))
 
@@ -13,8 +13,8 @@ Lg, _, chart = samples(seed=7)
 general = Lg[600:]                                   # charts + random, without the gray ramp
 for p in sys.argv[1:]:
     f = json.load(open(p)); M = np.array(f['matrix']); cv = [np.array(c) for c in f['presets'][0]['curves']]
-    spec = f['presets'][0]['spec']; path, _, ev = spec.partition(':')
-    T = load_target(path, 'vlog', float(ev or 0))
+    spec = f['presets'][0]['spec']; path, ev = split_spec(spec)
+    T = load_target(path, 'vlog', ev)
     mw, tw = model(M, cv, warm), T(warm)
     a, b = lab(mw), lab(tw)
     ha, hb = np.degrees(np.arctan2(a[:, 2], a[:, 1])), np.degrees(np.arctan2(b[:, 2], b[:, 1]))

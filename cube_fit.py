@@ -169,6 +169,22 @@ def de2000(a, b):
     return colour.delta_E(lab(a), lab(b), method='CIE 2000')
 
 
+def split_spec(s):
+    """把 'path[:ev]' 拆成 (path, ev:float)。
+
+    必须从右往左找冒号并校验后半段是数字：Windows 路径自带盘符冒号
+    （C:\\Users\\...），用 partition(':') 会把 'C' 当路径、'\\Users\\...'
+    当 EV，float() 直接 ValueError。
+    """
+    path, _, ev = s.rpartition(':')
+    if path and ev:
+        try:
+            return path, float(ev)
+        except ValueError:
+            pass
+    return s, 0.0
+
+
 if __name__ == '__main__':
     args = sys.argv[1:]
     shared = None
@@ -184,8 +200,8 @@ if __name__ == '__main__':
     out, in_cs, specs = args[0], args[1], args[2:]
     targets = []
     for s in specs:
-        path, _, ev = s.partition(':')
-        targets.append(load_target(path, in_cs, float(ev or 0)))
+        path, ev = split_spec(s)
+        targets.append(load_target(path, in_cs, ev))
     M, curves, chart = fit(targets) if shared is None else fit_matrix(targets, shared)
     std = np.stack([base_gamma((chart @ STD_LOOK.T)[:, c]) for c in range(3)], 1) / 16384
     report = []
@@ -195,8 +211,8 @@ if __name__ == '__main__':
         print(f'{os.path.basename(spec)}: chart dE2000 fit mean {d_fit.mean():.2f} max {d_fit.max():.2f} | '
               f'Standard-vs-target mean {d_std.mean():.2f}')
         gray = tgt[[18, 19, 20, 21, 22, 23]]
-        path, _, ev = spec.partition(':')
-        report.append(dict(spec=path, in_cs=in_cs, ev=float(ev or 0), curves=[list(map(int, c)) for c in cv],
+        path, ev = split_spec(spec)
+        report.append(dict(spec=path, in_cs=in_cs, ev=ev, curves=[list(map(int, c)) for c in cv],
                            chart_de_mean=float(d_fit.mean()), chart_de_max=float(d_fit.max()),
                            std_de_mean=float(d_std.mean()), target_gray_row=np.round(gray * 255).tolist(),
                            fit_chart=np.round(model(M, cv, chart) * 255).tolist(), target_chart=np.round(tgt * 255).tolist(),
