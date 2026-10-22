@@ -63,17 +63,36 @@ jobs:
           python - <<'PY'
           import os, zipfile, sys
           art = "${{ matrix.artifact }}.zip"
-          # 这些文件一旦缺失，运行时会报「index.html 未找到」或 ModuleNotFoundError，
-          # 历史上正是这类坏包被发布出去。缺失即故意让本 job 失败，release 不会生成。
-          required = ['index.html', 'make_slots15.py', 'armasm.py', 'paths.py']
+          # 历史上因 REPO 误判导致引擎 .py / index.html 全没进包，产出「index.html 未找到」
+          # 或「生成固件」ModuleNotFoundError 的坏包并被发布。这里列举固件生成所需的全部
+          # 关键文件；任一缺失即故意让本 job 失败，release 不会生成。
+          # 注意：models.py 等被 PyInstaller 编译进可执行体（不在 zip 里以 .py 形式出现），
+          # 由 build/ 的 warn 日志确认其已被收集；此处只校验「以数据文件形式平铺进包」的文件。
+          required_basenames = [
+              'index.html', 'make_slots15.py', 'make_slots16.py', 'make_grain_native.py',
+              'make_grain.py', 'gr3patch.py', 'armasm.py', 'codec_path.py', 'film_pipeline.py',
+              'gr3_tmp.py', 'build_firmware.py', 'paths.py', 'server.py', 'license.py',
+              'film_library.py', 'film_library.json',
+              # 构建必需的拟合数据
+              'portra400.json', 'ektar100.json', '5207.json', '5219.json',
+              'gr4_std_ma.json', 'base_gamma_std.npy',
+          ]
+          # 子目录：必须整体存在（编译进包的 models 由 warn 日志兜底，不在此列）
+          required_substrings = [
+              'third_party/gr-custom-tool',
+              'work/films_v16/fits/duccio',
+              'work/ma_probe5',
+          ]
           if not os.path.exists(art):
               print("FATAL: artifact %s not found" % art); sys.exit(1)
-          names = [os.path.basename(n) for n in zipfile.ZipFile(art).namelist()]
-          missing = [r for r in required if r not in names]
-          if missing:
-              print("FATAL: %s is MISSING required files %s — would ship a broken build. Failing on purpose." % (art, missing))
+          names = zipfile.ZipFile(art).namelist()
+          base = {os.path.basename(n) for n in names}
+          missing_b = [r for r in required_basenames if r not in base]
+          missing_s = [s for s in required_substrings if not any(s in n for n in names)]
+          if missing_b or missing_s:
+              print("FATAL: %s is MISSING required files -> basenames:%s substrings:%s — would ship a broken build. Failing on purpose." % (art, missing_b, missing_s))
               sys.exit(1)
-          print("OK: %s contains all required files %s" % (art, required))
+          print("OK: %s contains all %d required files + %d required subtrees" % (art, len(required_basenames), len(required_substrings)))
           PY
 
       - name: Upload artifact
