@@ -28,6 +28,30 @@
 见 `Mac使用说明.txt`(装 Python → 双击安装依赖 → 放官方固件 → 双击启动)。
 需要自备理光官方固件 `fwdc239b.bin`(2.10),本仓库不包含、也不分发任何理光固件。
 
+## 依赖:LLVM clang(生成固件必需)
+
+生成固件时需要用 **clang(LLVM)** 汇编 ARM 指令(颗粒引擎等底层补丁)。工具会按以下顺序自动查找:
+`CLANG` 环境变量 → PATH → 常见安装位置(Windows 的 `C:\Program Files\LLVM\bin\clang.exe` 等)。
+
+**Windows 安装**(任选其一):
+
+```bat
+winget install LLVM.LLVM
+```
+
+或到 [LLVM Releases](https://github.com/llvm/llvm-project/releases) 下载 `clang+llvm-…-x86_64-pc-windows-msvc` 安装包,安装时勾选 **"Add LLVM to system PATH"**。装完重开终端。
+
+已安装但不想加 PATH 的话,启动前设置环境变量即可:
+
+```bat
+set CLANG=C:\Program Files\LLVM\bin\clang.exe
+```
+
+**macOS**:`xcode-select --install`(或 `brew install llvm`)。
+**Linux**:`sudo apt install clang`。
+
+缺少 clang 时,工具会直接提示上述安装方法,而不是抛出看不懂的报错。
+
 ## 许可(按部分)
 
 - 引擎代码与笔记:GPL-2.0(因链接 [gr-custom-tool](https://github.com/DoYitNow/gr-custom-tool)(GPL-2.0)与 Unicorn(GPLv2))。上游 GR III 逆向研究部分版权归 idontknownihil(MIT),本仓库的增量部分版权归 Duccio(Du Yuanjun)。

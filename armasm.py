@@ -11,13 +11,76 @@ extract the .text machine code (replacing llvm-objcopy).
 部分 MDM 管控机）下 tempfile 模块会整体失效，这里改为在用户数据目录下自建
 scratch 区，保证打包后的 app 也能正常汇编。
 """
-import os, re, sys, subprocess, struct
+import os, re, sys, shutil, subprocess, struct
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gr3_tmp  # noqa: E402
 
-CLANG = os.environ.get('CLANG', '/usr/bin/clang')
 COND = {'b': 0xE, 'beq': 0x0, 'bne': 0x1, 'blo': 0x3, 'bhs': 0x2, 'bls': 0x9, 'bhi': 0x8}
+
+# clang 查找顺序：环境变量 CLANG → PATH → 常见安装位置。
+# Windows 默认没有 /usr/bin/clang，也不在 PATH 里（此前报 FileNotFoundError [WinError 2]），
+# 所以必须显式扫描常见安装目录，找不到时给出可执行的安装指引。
+
+
+def _env_clang():
+    v = os.environ.get('CLANG', '').strip()
+    if not v:
+        return None
+    if os.path.isfile(v) or shutil.which(v):
+        return v
+    raise RuntimeError(
+        f'环境变量 CLANG 指向的文件不存在：{v}\n'
+        f'The CLANG environment variable points to a non-existent file.'
+    )
+
+
+def _path_clang():
+    return shutil.which('clang') or shutil.which('clang.exe')
+
+
+def _common_clang():
+    cands = []
+    if sys.platform == 'win32':
+        pf = os.environ.get('ProgramFiles', r'C:\Program Files')
+        pf86 = os.environ.get('ProgramFiles(x86)', r'C:\Program Files (x86)')
+        lad = os.environ.get('LocalAppData', os.path.expanduser(r'~\AppData\Local'))
+        cands += [
+            rf'{pf}\LLVM\bin\clang.exe',
+            rf'{pf86}\LLVM\bin\clang.exe',
+            rf'{lad}\LLVM\bin\clang.exe',
+            r'C:\LLVM\bin\clang.exe',
+        ]
+    else:
+        cands += [
+            '/usr/bin/clang',
+            '/opt/homebrew/opt/llvm/bin/clang',
+            '/usr/local/opt/llvm/bin/clang',
+            '/usr/local/bin/clang',
+        ]
+    for c in cands:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
+def find_clang():
+    return _env_clang() or _path_clang() or _common_clang()
+
+
+_CLANG_MISS = (
+    '未找到 clang（LLVM 编译器），汇编 ARM 指令需要它。\n'
+    'clang (LLVM) not found — it is required to assemble the ARM stub.\n'
+    '解决办法 / How to fix:\n'
+    '  Windows: 安装 LLVM，任选其一 ——\n'
+    '    1) winget install LLVM.LLVM   （装完重开终端）\n'
+    '    2) 到 https://github.com/llvm/llvm-project/releases 下载\n'
+    '       clang+llvm-…-x86_64-pc-windows-msvc 安装包，安装时勾选\n'
+    '       "Add LLVM to system PATH"\n'
+    '    3) 已装但不想加 PATH：set CLANG=C:\\Program Files\\LLVM\\bin\\clang.exe\n'
+    '  macOS: xcode-select --install （或 brew install llvm）\n'
+    '  Linux: sudo apt install clang'
+)
 
 
 def _elf_text(obj_bytes):
@@ -63,8 +126,14 @@ def assemble(src, base):
         s, o = (os.path.join(d, n) for n in ('a.s', 'a.o'))
         with open(s, 'w') as f:
             f.write('.syntax unified\n.arm\n.text\n' + '\n'.join(fixed) + '\n')
-        r = subprocess.run([CLANG, '--target=armv7a-none-eabi', '-c', '-o', o, s],
-                           capture_output=True, text=True)
+        clang = find_clang()
+        if not clang:
+            raise RuntimeError(_CLANG_MISS)
+        try:
+            r = subprocess.run([clang, '--target=armv7a-none-eabi', '-c', '-o', o, s],
+                               capture_output=True, text=True)
+        except FileNotFoundError:
+            raise RuntimeError(_CLANG_MISS)
         if r.returncode:
             raise RuntimeError(r.stderr)
         with open(o, 'rb') as f:

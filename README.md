@@ -36,6 +36,32 @@ See `Mac使用说明.txt` (install Python → run the dependency installer → d
 firmware → double-click the launcher). Requires your own Ricoh official firmware `fwdc239b.bin`
 (2.10). This repository does not include or distribute any Ricoh firmware.
 
+## Dependency: LLVM clang (required for firmware build)
+
+Building firmware requires **clang (LLVM)** to assemble the ARM patches (grain engine, etc.).
+The tool looks it up in this order: `CLANG` environment variable → `PATH` → common install
+locations (e.g. `C:\Program Files\LLVM\bin\clang.exe` on Windows).
+
+**Windows** (either one):
+
+```bat
+winget install LLVM.LLVM
+```
+
+or grab `clang+llvm-…-x86_64-pc-windows-msvc` from the
+[LLVM Releases](https://github.com/llvm/llvm-project/releases) page and tick **"Add LLVM to
+system PATH"** during setup. Reopen the terminal afterwards.
+
+If clang is installed but not on PATH:
+
+```bat
+set CLANG=C:\Program Files\LLVM\bin\clang.exe
+```
+
+**macOS**: `xcode-select --install` (or `brew install llvm`). **Linux**: `sudo apt install clang`.
+
+When clang is missing, the tool prints these install instructions instead of a cryptic error.
+
 ## License (by part)
 
 - Engine code and notes: **GPL-2.0** (links [gr-custom-tool](https://github.com/DoYitNow/gr-custom-tool)
