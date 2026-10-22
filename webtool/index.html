@@ -6,96 +6,183 @@
 <title>GR III 胶片滤镜工具</title>
 <style>
   :root {
-    --bg: #eceae6;
+    /* —— Apple 风格调色板 —— */
+    --bg: #f5f5f7;
     --card: #ffffff;
-    --ink: #1a1a1a;
-    --muted: #8a8a86;
-    --line: #e2dfd9;
-    --accent: #1a1a1a;
-    --ok: #1e7d46;
-    --warn: #a06a1a;
-    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 2px 10px rgba(0,0,0,.04);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
-    background: var(--bg); color: var(--ink);
-    font-size: 13px; line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
+    --ink: #1d1d1f;     /* 主文字（近黑） */
+    --ink2: #6e6e73;    /* 次级 */
+    --ink3: #86868b;    /* 三级 / 标签 */
+    --line: rgba(0,0,0,.08);
+    --line2: #d2d2d7;   /* 实体描边 */
+    --accent: #0071e3;  /* Apple 蓝 */
+    --accent-hover: #0077ed;
+    --accent-soft: #eef4fd;
+    --ok: #34c759;
+    --ok-ink: #1a7a3c;
+    --warn: #ff9f0a;
+    --warn-ink: #b06a12;
+    --danger: #ff3b30;
+    --danger-ink: #c0392b;
+
+    --radius: 18px;
+    --radius-sm: 12px;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px rgba(0,0,0,.06);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.06);
   }
 
-  /* ===== 顶栏 ===== */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+                 "PingFang SC", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -.005em;
+  }
+
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: rgba(0,0,0,.18); border-radius: 10px; border: 2px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.3); background-clip: content-box; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ===================== 顶栏 ===================== */
   .topbar {
-    background: #fff; border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 10px;
-    padding: 0 18px; height: 46px; position: sticky; top: 0; z-index: 10;
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px;
+    height: 56px; padding: 0 24px;
+    background: rgba(255,255,255,.72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid var(--line);
   }
   .gr-logo {
     width: 30px; height: 30px; background: var(--ink); color: #fff;
-    border-radius: 7px; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 12px; letter-spacing: .5px;
+    box-shadow: inset 0 0 0 .5px rgba(255,255,255,.15);
   }
-  .topbar .t1 { font-weight: 700; font-size: 14px; }
-  .topbar .t2 { font-size: 11px; color: var(--muted); margin-top: -2px; }
+  .topbar .t1 { font-weight: 600; font-size: 15px; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .topbar .t2 { font-size: 11px; color: var(--ink3); margin-top: 1px; }
+  .ver-badge {
+    font-size: 11px; font-weight: 600; color: var(--ok-ink);
+    background: #e8f9ee; padding: 2px 9px; border-radius: 980px; letter-spacing: 0;
+  }
   .topbar .spacer { flex: 1; }
-  .topbar .env { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: #ccc; }
+  .env { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink2); font-weight: 500; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #c7c7cc; flex: none; }
   .dot.ok { background: var(--ok); }
-  .dot.err { background: #c0392b; }
+  .dot.err { background: var(--danger); }
 
-  /* ===== 三栏布局 ===== */
+  /* ===================== 布局 ===================== */
   .layout {
-    display: grid; grid-template-columns: 240px 1fr 250px;
-    gap: 14px; max-width: 1180px; margin: 14px auto; padding: 0 14px 40px;
+    display: grid;
+    grid-template-columns: 288px minmax(0, 1fr) 332px;
+    gap: 20px;
+    max-width: 1260px;
+    margin: 24px auto 64px;
+    padding: 0 24px;
     align-items: start;
   }
-  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
-  .panel {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: 10px; box-shadow: var(--shadow); overflow: hidden;
+  @media (max-width: 1080px) {
+    .layout { grid-template-columns: 1fr; }
   }
-  .panel + .panel { margin-top: 14px; }
-  .panel-head {
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .card + .card { margin-top: 16px; }
+  .card-head {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 14px; border-bottom: 1px solid var(--line);
-    font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: 1px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
   }
-  .panel-body { padding: 12px 14px; }
+  .card-head .ct {
+    font-size: 11px; font-weight: 600; color: var(--ink3);
+    letter-spacing: .06em; text-transform: uppercase;
+  }
+  .card-body { padding: 20px; }
+  .mono { font-family: "SF Mono", Menlo, monospace; font-size: 11px; color: var(--ink3); }
 
-  .fw-name { font-weight: 600; font-size: 14px; }
-  .fw-ver { font-size: 11px; color: var(--muted); font-family: Menlo, monospace; margin: 2px 0 10px; }
-  .btn {
-    border: 1px solid var(--line); background: #faf9f7; color: var(--ink);
-    padding: 7px 14px; border-radius: 7px; font-size: 12px; cursor: pointer;
-    transition: all .12s;
+  /* ===================== 左栏：固件 ===================== */
+  .fw-name { font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+  .fw-ver { font-size: 12px; color: var(--ink3); font-family: "SF Mono", Menlo, monospace; margin: 3px 0 14px; }
+  .fw-tip { font-size: 12.5px; color: var(--ink2); line-height: 1.65; }
+  .fw-tip b { color: var(--ink); font-weight: 600; }
+  .fw-divider { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+  .fw-path {
+    margin-top: 10px; font-size: 12px; color: var(--warn-ink);
+    background: #fff8ec; border: 1px solid #f3e2bf; border-radius: 10px;
+    padding: 9px 12px; line-height: 1.5; word-break: break-all;
   }
-  .btn:hover { background: #f0eeea; }
-  .btn-dark {
-    background: var(--ink); color: #fff; border-color: var(--ink); font-weight: 600;
+  .fw-note {
+    margin-top: 10px; font-size: 12px; color: var(--ink2); line-height: 1.6;
+    background: var(--bg); border-radius: 10px; padding: 10px 12px;
   }
-  .btn-dark:hover { background: #000; }
-  .btn-dark:disabled { background: #b5b3af; border-color: #b5b3af; cursor: wait; }
-  .btn-block { display: block; width: 100%; text-align: center; }
 
-  .film-list { max-height: 480px; overflow-y: auto; }
-  .film-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 8px 14px; cursor: pointer; border-bottom: 1px solid #f2f0ec;
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 980px;
+    background: #e8f9ee; color: var(--ok-ink);
   }
-  .film-item:last-child { border-bottom: none; }
-  .film-item:hover { background: #f7f6f3; }
-  .film-item.sel { background: #efedea; }
-  .film-item.locked { cursor: default; opacity: .55; }
-  .film-item.locked:hover { background: none; }
+  .status-pill.err { background: #ffe9e7; color: var(--danger-ink); }
 
+  /* ===================== 左栏：槽位列表 ===================== */
+  .slot-list { padding: 8px; }
+  .slot-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 12px; cursor: pointer;
+    transition: background .14s ease, box-shadow .14s ease;
+  }
+  .slot-row:hover { background: #f5f5f7; }
+  .slot-row.sel {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px rgba(0,113,227,.28);
+  }
+  .slot-row.locked { opacity: .62; }
+  .slot-row.locked:hover { background: #f5f5f7; }
+  .slot-row.kept { cursor: default; opacity: .85; }
+  .slot-row.kept:hover { background: transparent; }
+
+  .slot-info { min-width: 0; flex: 1; }
+  .slot-name {
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px;
+  }
+  .slot-name .num { color: var(--accent); font-weight: 700; }
+  .slot-row.kept .slot-name .num { color: var(--ink3); }
+  .slot-sub { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; align-items: center; }
+
+  /* ===================== 芯片 / 标签 ===================== */
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 980px;
+    white-space: nowrap; letter-spacing: 0;
+  }
+  .chip-soft { background: #f2f2f7; color: var(--ink2); }
+  .chip-kept { background: #f2f2f7; color: var(--ink3); }
+  .chip-de-good { background: #e8f9ee; color: var(--ok-ink); }
+  .chip-de-mid  { background: #fff3e0; color: var(--warn-ink); }
+  .chip-de-bad  { background: #ffe9e7; color: var(--danger-ink); }
+
+  /* ===================== 胶片缩略（图标，保持原样） ===================== */
   .thumb {
-    width: 38px; height: 38px; border-radius: 5px; flex: none;
+    width: 38px; height: 38px; border-radius: 6px; flex: none;
     position: relative; overflow: hidden;
-    box-shadow: inset 0 0 0 1px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.12);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.14);
     display: flex; flex-direction: column;
   }
-  .thumb.lg { width: 72px; height: 72px; border-radius: 8px; }
-  .thumb.grey { filter: grayscale(1); opacity: .55; }
+  .thumb.lg { width: 76px; height: 76px; border-radius: 9px; }
+  .thumb.grey { filter: grayscale(1); opacity: .58; }
   .thumb .strip { height: 10%; flex: none; }
   .thumb .brand {
     height: 22%; flex: none;
@@ -115,206 +202,313 @@
   }
   .thumb.lg .bspeed { font-size: 30px; }
 
-  .fi-info { min-width: 0; flex: 1; }
-  .fi-name { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .fi-sub { font-size: 11px; color: var(--muted); margin-top: 1px; line-height: 1.5; }
-  .fi-sub .meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-
-  /* ===== 中栏详情 ===== */
-  .detail-head { display: flex; justify-content: space-between; align-items: baseline; }
-  .detail-kicker { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
-  .detail-title { font-size: 22px; font-weight: 700; margin: 2px 0 2px; }
-  .detail-sub { font-size: 12px; color: var(--muted); }
-
-  .field-label { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
-  select.inp, input.inp {
-    width: 100%; padding: 8px 10px; font-size: 13px;
-    border: 1px solid var(--line); border-radius: 7px; background: #faf9f7; color: var(--ink);
-    appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238a8a86' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 10px center;
+  /* ===================== 中栏：槽位详情 ===================== */
+  .note-blue {
+    background: var(--accent-soft); border: 1px solid #cfe0fb; border-radius: 12px;
+    padding: 13px 16px; font-size: 12.5px; color: #1a4a8a; line-height: 1.65; margin-bottom: 20px;
   }
-  input.inp { background-image: none; }
-  select.inp:focus, input.inp:focus { outline: none; border-color: var(--ink); }
-
-  .de-tag {
-    display: inline-block; font-size: 12px; padding: 3px 11px; border-radius: 20px; font-weight: 600;
-    white-space: nowrap; letter-spacing: .2px;
+  .detail-kicker {
+    font-size: 11.5px; color: var(--ink3); letter-spacing: .06em;
+    text-transform: uppercase; font-weight: 600;
   }
-  .de-good { background: #e8f4ec; color: var(--ok); }
-  .de-mid { background: #fdf3e3; color: var(--warn); }
-  .de-bad { background: #fdeaea; color: #b3483c; }
+  .detail-title { font-size: 30px; font-weight: 700; letter-spacing: -.025em; margin: 5px 0 3px; }
+  .detail-sub { font-size: 14px; color: var(--ink2); }
+  .detail-body { display: flex; align-items: flex-start; gap: 24px; margin-top: 18px; }
+  .detail-main { flex: 1; min-width: 0; }
 
-  .ver-badge { font-size: 10px; padding: 1px 7px; border-radius: 20px; font-weight: 600; margin-left: 6px; vertical-align: middle; white-space: nowrap; }
-  .ver-orig { background: #e8f0fb; color: #1a56a0; border: 1px solid #bcd4f0; }
-  .ver-cal  { background: #e8f4ec; color: #1a7a3c; border: 1px solid #bfe3cb; }
-  .ver-legacy { background: #f0f0f0; color: #777; border: 1px solid #ddd; }
-  .pos-tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; font-weight: 600; background: #eef1e9; color: #4a6b2a; border: 1px solid #d3debf; white-space: nowrap; }
+  .meta-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .spec-list { font-size: 12.5px; color: var(--ink2); line-height: 1.8; margin-top: 14px; }
+  .spec-list b { color: var(--ink); font-weight: 600; }
 
-  .mini-note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .field { margin-top: 20px; }
+  .field-label {
+    font-size: 12px; font-weight: 600; color: var(--ink2);
+    margin-bottom: 9px; letter-spacing: .01em;
+  }
+  .field-label .hint { font-weight: 400; color: var(--ink3); }
+
+  .select {
+    width: 100%; padding: 11px 38px 11px 14px; font-size: 14px; font-family: inherit;
+    border: 1px solid var(--line2); border-radius: 12px; background: #fff; color: var(--ink);
+    appearance: none; -webkit-appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2386868b' fill='none' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 14px center;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(0,113,227,.15); }
+
+  /* 颗粒分段控件（Apple Segmented） */
+  .segmented {
+    display: inline-flex; background: #f2f2f7; border-radius: 12px;
+    padding: 3px; gap: 2px; width: 100%;
+  }
+  .seg {
+    flex: 1; min-width: 0; padding: 8px 6px; border: none; background: transparent;
+    border-radius: 9px; font-size: 13px; font-weight: 500; font-family: inherit;
+    color: var(--ink2); cursor: pointer;
+    transition: background .18s cubic-bezier(.25,.1,.25,1), color .18s, box-shadow .18s;
+  }
+  .seg:hover { color: var(--ink); }
+  .seg.on {
+    background: #fff; color: var(--ink); font-weight: 600;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .mini-note { font-size: 12px; color: var(--ink3); line-height: 1.65; margin-top: 10px; }
+
+  /* 解锁卡片 */
+  .lock-card {
+    margin-top: 18px; padding: 16px;
+    border: 1px solid #f0caca; background: #fdf5f5; border-radius: 14px;
+  }
+  .lock-title { font-size: 13px; font-weight: 700; color: var(--danger-ink); margin-bottom: 8px; }
+  .lock-desc { font-size: 12px; color: var(--ink2); line-height: 1.65; margin-bottom: 12px; }
+  .lock-row { display: flex; gap: 8px; }
+  .lock-row .inp { flex: 1; }
+  .lock-row .btn { flex: none; }
+
+  /* ===================== 控件（按钮 / 输入） ===================== */
+  .btn {
+    font-family: inherit; font-size: 14px; font-weight: 500;
+    padding: 10px 18px; border-radius: 980px;
+    border: 1px solid var(--line2); background: #fff; color: var(--ink);
+    cursor: pointer; transition: background .15s, transform .08s, box-shadow .15s;
+  }
+  .btn:hover { background: #f5f5f7; }
+  .btn:active { transform: scale(.985); }
+  .btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:active { transform: scale(.985); }
+  .btn-primary:disabled { background: #a9c7ec; border-color: #a9c7ec; color: #fff; cursor: wait; }
+  .btn-block { display: block; width: 100%; text-align: center; }
+  .btn-mini { padding: 5px 11px; font-size: 12px; border-radius: 980px; }
+
+  .inp {
+    width: 100%; padding: 11px 14px; font-size: 14px; font-family: inherit;
+    border: 1px solid var(--line2); border-radius: 12px; background: #fff; color: var(--ink);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .inp:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(0,113,227,.15); }
+  .inp[readonly] { background: #f5f5f7; color: var(--ink2); }
+
+  /* 下载按钮 */
   .dl-btn {
-    display: none; text-align: center; margin-top: 10px; padding: 9px 0;
-    background: #c0392b; color: #fff; text-decoration: none;
-    border-radius: 7px; font-weight: 600; font-size: 12.5px;
+    display: none; text-align: center; margin-top: 14px; padding: 12px 0;
+    border-radius: 980px; font-weight: 600; font-size: 14px; text-decoration: none;
+    transition: background .15s, transform .08s;
   }
-  .dl-btn:hover { background: #a93226; }
-  .dl-btn.ready { display: block; background: #1e7d46; }
-  .dl-btn.ready:hover { background: #176438; }
-  .dl-btn.locked { display: block; background: #b5b3af; cursor: not-allowed; pointer-events: none; }
-  .verify-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
-  .verify-badge .tick { color: #1e7d46; font-weight: 700; }
-  .verify-badge .cross { color: #b3483c; font-weight: 700; }
-  .verify-line { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 12px; }
+  .dl-btn.ready { display: block; background: var(--ok); color: #fff; }
+  .dl-btn.ready:hover { background: #2db14e; }
+  .dl-btn.ready:active { transform: scale(.99); }
+  .dl-btn.locked { display: block; background: #e3e3e6; color: #9a9a9e; cursor: not-allowed; }
 
-  .result-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px; }
-  .result-table th, .result-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
-  .result-table th { color: var(--muted); font-weight: 500; font-size: 11px; }
-  .mono { font-family: Menlo, monospace; font-size: 11px; color: var(--muted); }
+  /* 验证结果框 */
+  .verify-box {
+    margin: 12px 0; padding: 14px 16px; border-radius: 14px; line-height: 1.6;
+    border: 1px solid #bfe3cb; background: #e8f9ee;
+  }
+  .verify-box.warn { border-color: #f0e0c0; background: #fdf8ee; }
+  .verify-box .vb-title { font-weight: 700; font-size: 13.5px; margin-bottom: 6px; color: var(--ok-ink); }
+  .verify-box.warn .vb-title { color: var(--warn-ink); }
+  .verify-line { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12.5px; color: var(--ink2); }
+  .verify-badge { font-weight: 700; }
+  .verify-badge .tick { color: var(--ok-ink); }
+  .verify-badge .cross { color: var(--danger-ink); }
 
+  .result-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 14px; }
+  .result-table th, .result-table td { text-align: left; padding: 9px 8px; border-bottom: 1px solid var(--line); }
+  .result-table th { color: var(--ink3); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .result-table tr:last-child td { border-bottom: none; }
+
+  /* 错误框 */
   .error-box {
-    background: #f7e8e6; color: #c0392b; padding: 10px 14px; border-radius: 8px;
-    font-size: 12px; margin-top: 12px; white-space: pre-wrap; display: none;
+    background: #ffe9e7; color: var(--danger-ink); padding: 12px 16px;
+    border-radius: 12px; font-size: 12.5px; margin: 0 auto 20px;
+    max-width: 1260px; white-space: pre-wrap; display: none; line-height: 1.6;
+    border: 1px solid #f0caca;
   }
+
+  /* 固件引导（动态注入） */
+  .fw-guide {
+    margin: 16px 0; padding: 16px 18px; border: 1px solid #f0d9b0;
+    border-radius: 14px; background: #fdf6e8; font-size: 12.5px; line-height: 1.7; color: #6b4a12;
+  }
+  .fw-guide b { color: #5a3d0e; }
+  .fw-guide ol { margin: 8px 0 8px 18px; }
+  .fw-guide li { margin: 3px 0; }
+
+  /* 新建胶片 */
+  .divider { border: none; border-top: 1px solid var(--line); margin: 16px 0; }
+  .fw-btn-row { display: flex; align-items: center; gap: 8px; }
+  .file-inp { font-size: 12px; width: 100%; margin-bottom: 10px; color: var(--ink2); }
+  .warn-note {
+    margin-top: 12px; font-size: 12px; color: var(--warn-ink);
+    background: #fff8ec; border: 1px solid #f3e2bf; border-radius: 10px; padding: 10px 12px; line-height: 1.6;
+  }
+
+  /* 胶片库 */
+  .lib-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--line);
+  }
+  .lib-item:last-child { border-bottom: none; }
+  .lib-info { flex: 1; min-width: 0; }
+  .lib-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lib-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
+  .lib-actions { display: flex; gap: 6px; flex: none; margin-left: auto; }
+  .btn-danger { color: var(--danger-ink); border-color: #f0caca; background: #fdf5f5; }
+  .btn-danger:hover { background: #fbeaea; }
+
+  /* 说明卡片 */
+  .note-card-body { font-size: 12.5px; color: var(--ink2); line-height: 1.75; }
+  .note-card-body b { color: var(--ink); font-weight: 600; }
+
+  footer { max-width: 1260px; margin: 0 auto; padding: 0 24px 40px; font-size: 11.5px; color: var(--ink3); }
+
   .loading {
-    display: inline-block; width: 12px; height: 12px; border: 2px solid #fff;
-    border-top-color: transparent; border-radius: 50%; margin-right: 6px;
+    display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(255,255,255,.5);
+    border-top-color: #fff; border-radius: 50%; margin-right: 7px;
     vertical-align: -2px; animation: spin .7s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .lib-item {
-    display: flex; align-items: center; gap: 10px;
-    flex-wrap: wrap;
-    padding: 10px 0; border-bottom: 1px solid #f2f0ec;
-  }
-  .lib-item:last-child { border-bottom: none; }
-  .lib-item > div:nth-child(2) { flex: 1; min-width: 150px; overflow: hidden; }
-  .lib-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .lib-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
-  .lib-actions { display: flex; gap: 5px; flex: none; margin-left: auto; }
-  .btn-mini { padding: 4px 9px; font-size: 11px; border-radius: 6px; }
-  .btn-danger { color: #b3483c; border-color: #e6c2bd; background: #fdf7f6; }
-  .btn-danger:hover { background: #fbeae7; }
-
-  .v16-note {
-    background: #eef7ff; border: 1px solid #c8e0f5; border-radius: 7px;
-    padding: 10px 12px; font-size: 11.5px; color: #1a5a8a; line-height: 1.6; margin-bottom: 12px;
-  }
-  footer { max-width: 1180px; margin: 0 auto; padding: 0 14px 30px; font-size: 11px; color: var(--muted); }
+  /* 入场动画（精致感） */
+  .card { animation: rise .5s cubic-bezier(.2,.7,.2,1) both; }
+  .layout > *:nth-child(2) { animation-delay: .05s; }
+  .layout > *:nth-child(3) { animation-delay: .1s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 </style>
 </head>
 <body>
 
-<div class="topbar">
+<header class="topbar">
   <div class="gr-logo">GR</div>
   <div>
-    <div class="t1">GR III 胶片滤镜工具 <span id="verBadge" class="mini-note" style="font-weight:700;color:#1e7d46;background:#e8f4ec;padding:1px 7px;border-radius:6px">v1.5.2</span></div>
+    <div class="t1">GR III 胶片滤镜工具 <span id="verBadge" class="ver-badge">v1.5.2</span></div>
     <div class="t2">逐槽颗粒 · 自定义图标 · v16 管线</div>
   </div>
   <div class="spacer"></div>
   <div class="env"><span class="dot" id="dot"></span><span id="statusText">检查环境…</span></div>
-</div>
+</header>
 
-<div class="layout">
+<main class="layout">
   <!-- ===== 左栏 ===== -->
-  <div>
-    <div class="panel">
-      <div class="panel-head">固件</div>
-      <div class="panel-body">
+  <aside>
+    <section class="card">
+      <div class="card-head">
+        <span class="ct">固件</span>
+        <span class="status-pill" id="fwPill" style="display:none"></span>
+      </div>
+      <div class="card-body">
         <div class="fw-name">fwdc239b.bin</div>
         <div class="fw-ver" id="fwVer">2.10.21.27</div>
-        <span class="hint mini-note">官方固件为底，改动可逆，可刷回</span>
-        <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
-        <div class="field-label" style="margin-bottom:8px">官方固件（基底，需自行导入）</div>
-        <div class="mini-note" style="line-height:1.7">
-          本工具以理光官方固件为底。请从理光官网下载 <b>GR III 2.10</b> 固件 <span class="mono">fwdc239b.bin</span>，放到<b>桌面</b>或<b>下载</b>文件夹即可（工具会自动找到）。也可手动放入工具的用户数据目录。
+        <div class="fw-tip">以理光官方固件为底，改动可逆，可刷回原厂。</div>
+        <hr class="fw-divider">
+        <div class="field-label" style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:9px">官方固件（基底，需自行导入）</div>
+        <div class="fw-tip">
+          本工具以理光官方固件为底。请从理光官网下载 <b>GR III 2.10</b> 固件 <span class="mono">fwdc239b.bin</span>，放到 <b>桌面</b> 或 <b>下载</b> 文件夹即可（工具自动找到）。也可手动放入用户数据目录。
         </div>
-        <div class="mini-note" id="fwPathNote" style="margin-top:6px;color:#8a6a33"></div>
-        <div class="mini-note" style="margin-top:8px">刷回官方：把官方 <span class="mono">fwdc239b.bin</span> 放 SD 卡根目录，关机按住 MENU 开机刷入即可恢复原厂。</div>
+        <div class="fw-path" id="fwPathNote" style="display:none"></div>
+        <div class="fw-note">刷回官方：把官方 <span class="mono">fwdc239b.bin</span> 放 SD 卡根目录，关机按住 MENU 开机刷入即可恢复。</div>
       </div>
-    </div>
-    <div class="panel">
-      <div class="panel-head">胶片清单 <span class="mono" id="filmCount"></span></div>
-      <div class="film-list" id="filmList"></div>
-    </div>
-  </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span class="ct">影像控制槽位</span>
+        <span class="mono" id="filmCount"></span>
+      </div>
+      <div class="slot-list" id="filmList"></div>
+    </section>
+  </aside>
 
   <!-- ===== 中栏 ===== -->
-  <div class="panel">
-    <div class="panel-body" id="detail"></div>
-  </div>
+  <section class="card">
+    <div class="card-body" id="detail"></div>
+  </section>
 
   <!-- ===== 右栏 ===== -->
-  <div>
-    <div class="panel">
-      <div class="panel-head">生成固件</div>
-      <div class="panel-body">
-        <div class="field-label">输出文件</div>
-        <input class="inp" value="gr3_film_mods_custom.bin" readonly style="margin-bottom:10px">
-        <div class="mini-note">6 个胶片追加为「新增影像控制项」，官方模式逐字节保留</div>
-        <div class="field-label" style="margin-top:10px">机型</div>
-        <select id="modelSel" class="inp" style="margin-bottom:6px" onchange="refreshModelUI()"></select>
+  <aside>
+    <section class="card">
+      <div class="card-head"><span class="ct">生成固件</span></div>
+      <div class="card-body">
+        <div class="field-label" style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:9px">输出文件</div>
+        <input class="inp" value="gr3_film_mods_custom.bin" readonly style="margin-bottom:12px">
+        <div class="mini-note" style="margin-bottom:14px">6 个胶片追加为「新增影像控制项」，官方模式逐字节保留。</div>
+
+        <div class="field-label" style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:9px">机型</div>
+        <select id="modelSel" class="select" style="margin-bottom:8px" onchange="refreshModelUI()"></select>
         <div class="mini-note" id="modelNote"></div>
-        <div class="mini-note" style="margin-top:10px;margin-bottom:10px">颗粒在<b>中栏每个槽位详情</b>里逐槽选择（无 / Low / Mid / High），烘焙进固件、相机直出就带颗粒，换滤镜也不丢。</div>
-        <button class="btn btn-dark btn-block build-cta" id="buildBtn" onclick="build()">生成固件</button>
-        <div id="buildStatus" style="margin-top:10px"></div>
+
+        <div class="mini-note" style="margin-top:12px">颗粒在 <b>中栏每个槽位详情</b> 里逐槽选择（无 / Low / Mid / High），烘焙进固件，相机直出就带颗粒，换滤镜也不丢。</div>
+
+        <button class="btn btn-primary btn-block" id="buildBtn" style="margin-top:16px" onclick="build()">生成固件</button>
+        <div id="buildStatus" style="margin-top:6px"></div>
         <a id="dlBtn" class="dl-btn" href="/gr3_film_mods_custom.bin" download>✓ 下载固件（已验证可用）</a>
         <div class="mini-note" id="flashHint" style="display:none">
-          <b style="color:var(--ok)">✓ 完整性验证通过 · 可回刷官方固件。</b>下载后改名 <span class="mono">fwdc239b.bin</span> 放 SD 卡根目录，关机按住 MENU 开机刷入。回刷官方：用本页「固件」区的官方 .bin 同样刷入即可恢复。
+          <b style="color:var(--ok-ink)">✓ 完整性验证通过 · 可回刷官方固件。</b>下载后改名 <span class="mono">fwdc239b.bin</span> 放 SD 卡根目录，关机按住 MENU 开机刷入。回刷官方：用本页「固件」区的官方 .bin 同样刷入即可恢复。
         </div>
       </div>
-    </div>
-    <div class="panel" id="resultPanel" style="display:none">
-      <div class="panel-head">构建结果</div>
-      <div class="panel-body" id="resultBody"></div>
-    </div>
-    <div class="panel">
-      <div class="panel-head">新建胶片（上传 XMP 或 CUBE → 机内滤镜）</div>
-      <div class="panel-body">
+    </section>
 
-        <div class="field-label">胶片名字（机内菜单显示名）<span style="color:var(--warn);font-weight:600">· 仅限英文/数字</span></div>
-        <input class="inp" id="newFilmName" placeholder="如 Kodak 5207" oninput="asciiOnly(this)" style="margin-bottom:6px">
-        <input class="inp" id="newFilmShort" placeholder="短码（图标大字，仅英文/数字，留空用名字）" oninput="asciiOnly(this)" style="margin-bottom:10px">
+    <section class="card" id="resultPanel" style="display:none">
+      <div class="card-head"><span class="ct">构建结果</span></div>
+      <div class="card-body" id="resultBody"></div>
+    </section>
 
-        <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
+    <section class="card">
+      <div class="card-head"><span class="ct">新建胶片</span></div>
+      <div class="card-body">
+        <div class="field-label" style="font-size:12px;font-weight:600;color:var(--ink2)">胶片名字（机内菜单显示名）<span style="color:var(--warn-ink);font-weight:600"> · 仅限英文/数字</span></div>
+        <input class="inp" id="newFilmName" placeholder="如 Kodak 5207" oninput="asciiOnly(this)" style="margin-bottom:8px">
+        <input class="inp" id="newFilmShort" placeholder="短码（图标大字，仅英文/数字，留空用名字）" oninput="asciiOnly(this)" style="margin-bottom:14px">
 
-        <div class="field-label" style="color:var(--ok)">方式 A：直接导入 .xmp 预设（全自动，推荐）</div>
-        <div class="mini-note" style="margin-bottom:6px">拖入 Lightroom 导出的 .xmp，自动解析 Look 颜色表 → cube → 拟合，无需任何手动步骤。</div>
-        <input type="file" id="newFilmXmp" accept=".xmp" style="font-size:11px;margin-bottom:8px">
-        <button class="btn btn-block btn-dark" id="xmpBtn" onclick="createFilmsFromXmp()">XMP 直读 → 拟合 → 入胶片库</button>
-        <div class="mini-note" id="xmpStatus" style="margin-top:6px"></div>
+        <hr class="divider">
 
-        <hr style="border:none;border-top:1px solid var(--line);margin:12px 0">
+        <div class="field-label" style="font-size:12px;font-weight:600;color:var(--ok-ink)">方式 A：导入 .xmp 预设（全自动，推荐）</div>
+        <div class="mini-note" style="margin-bottom:8px">拖入 Lightroom 导出的 .xmp，自动解析 Look 颜色表 → cube → 拟合，无需任何手动步骤。</div>
+        <input type="file" id="newFilmXmp" accept=".xmp" class="file-inp">
+        <button class="btn btn-primary btn-block" id="xmpBtn" onclick="createFilmsFromXmp()">XMP 直读 → 拟合 → 入胶片库</button>
+        <div class="mini-note" id="xmpStatus" style="margin-top:8px"></div>
 
-        <div class="field-label" style="color:var(--ok)">方式 B：直接导入 .cube LUT（全自动）</div>
-        <div class="mini-note" style="margin-bottom:6px">拖入现成的 .cube 文件（LUT_3D_SIZE），直接拟合进机内，跳过 HALD 转 cube。</div>
-        <input type="file" id="newFilmCube" accept=".cube" style="font-size:11px;margin-bottom:8px">
+        <hr class="divider">
+
+        <div class="field-label" style="font-size:12px;font-weight:600;color:var(--ok-ink)">方式 B：导入 .cube LUT（全自动）</div>
+        <div class="mini-note" style="margin-bottom:8px">拖入现成的 .cube 文件（LUT_3D_SIZE），直接拟合进机内，跳过 HALD 转 cube。</div>
+        <input type="file" id="newFilmCube" accept=".cube" class="file-inp">
         <button class="btn btn-block" id="cubeBtn" onclick="createFilmsFromCube()">CUBE 直读 → 拟合 → 入胶片库</button>
-        <div class="mini-note" id="cubeStatus" style="margin-top:6px"></div>
+        <div class="mini-note" id="cubeStatus" style="margin-top:8px"></div>
 
-        <div class="mini-note" style="margin-top:10px;color:var(--warn)">
+        <div class="warn-note">
           ⚠️ 方式 A（XMP 直读）最省事，适合 Lightroom 预设；方式 B（CUBE）适合已有 LUT。两者都在本地网页端跑完拟合，自动进胶片库。
         </div>
       </div>
-    </div>
-    <div class="panel">
-      <div class="panel-head">胶片库 <span class="mono" id="libCount"></span></div>
-      <div class="panel-body" id="filmLib"></div>
-    </div>
-    <div class="panel">
-      <div class="panel-head">说明</div>
-      <div class="panel-body mini-note">
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <span class="ct">胶片库</span>
+        <span class="mono" id="libCount"></span>
+      </div>
+      <div class="card-body" id="filmLib"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><span class="ct">说明</span></div>
+      <div class="card-body note-card-body">
         ⚠️ 刷第三方固件有变砖风险，请自行评估。本工具离线运行，不联网、不上传数据。<br><br>
         当前为 <b>v16 管线</b>：胶片作为「新增影像控制项」追加到机内菜单末尾（官方模式之后），不覆盖任何官方模式。<br><br>
         已启用 <b>12 分区色相</b>（MultiAxial）：机内色相校正默认中性，后续可按胶片特性偏移。<br><br>
         <b>HDF 版兼容</b>：胶片图标已避开 HDF 开关图标区（0x05-0x07），改用安全 ID。<br><br>
         <b>⚠️ 实拍注意</b>：12 分区色相有 speckle（灰部杂点）风险，实拍时留意灰部；HDF 版未经原作者实测，请自行验证。
       </div>
-    </div>
-  </div>
-</div>
+    </section>
+  </aside>
+</main>
 
-<div class="error-box" id="error" style="max-width:1180px;margin:0 auto 20px"></div>
+<div class="error-box" id="error"></div>
 
 <footer></footer>
 
@@ -427,7 +621,7 @@
     btn && (btn.disabled = true);
     try {
       const r = await (await fetch('/license/apply', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code })
       })).json();
       if (r.ok) {
@@ -452,7 +646,7 @@
     </div>`;
   }
 
-  function deClass(de) { return de < 1.8 ? 'de-good' : (de < 2.5 ? 'de-mid' : 'de-bad'); }
+  function deClass(de) { return de < 1.8 ? 'chip-de-good' : (de < 2.5 ? 'chip-de-mid' : 'chip-de-bad'); }
   function filmOf(key) { return FILMS.find(f => f.key === key); }
 
   /* ===== 左栏：胶片清单（6 胶片 + 官方保留） ===== */
@@ -463,47 +657,45 @@
       const f = key ? filmOf(key) : null;
       if (!f) {
         html += `
-        <div class="film-item ${idx === selSlot ? 'sel' : ''}" onclick="selectSlot(${idx})">
+        <div class="slot-row ${idx === selSlot ? 'sel' : ''}" onclick="selectSlot(${idx})">
           <div class="thumb grey" style="background:#c9c7c1">
             <div class="strip" style="background:#a5a39d"></div>
             <div class="brand" style="color:#ffffff">GR III</div>
             <div class="bname" style="color:#ffffff">&nbsp;</div>
             <div class="bspeed" style="color:#ffffff;font-size:9px">空槽</div>
           </div>
-          <div class="fi-info">
-            <div class="fi-name"><span style="color:var(--accent);font-weight:700">${idx + 1}</span> · 空槽位</div>
-            <div class="fi-sub"><div class="meta"><span class="pos-tag">新增#${idx + 1} · tone ${25 + idx}</span></div></div>
+          <div class="slot-info">
+            <div class="slot-name"><span class="num">${idx + 1}</span> · 空槽位</div>
+            <div class="slot-sub"><span class="chip chip-soft">新增#${idx + 1} · tone ${25 + idx}</span></div>
           </div>
         </div>`;
         return;
       }
       const locked = isFilmLocked(f.key);
       html += `
-        <div class="film-item ${idx === selSlot ? 'sel' : ''} ${locked ? 'locked' : ''}" onclick="selectSlot(${idx})">
+        <div class="slot-row ${idx === selSlot ? 'sel' : ''} ${locked ? 'locked' : ''}" onclick="selectSlot(${idx})">
           ${boxHTML(f)}
-          <div class="fi-info">
-            <div class="fi-name"><span style="color:var(--accent);font-weight:700">${idx + 1}</span> · ${f.name} ${locked ? '<span style="color:#c0392b">🔒</span>' : ''}</div>
-            <div class="fi-sub">
-              <div class="meta">
-                <span class="pos-tag">新增#${idx + 1} · tone ${25 + idx}</span>
-                <span class="de-tag ${deClass(f.de)}">ΔE ${f.de}</span>
-              </div>
+          <div class="slot-info">
+            <div class="slot-name"><span class="num">${idx + 1}</span> · ${f.name} ${locked ? '<span style="color:#c0392b">🔒</span>' : ''}</div>
+            <div class="slot-sub">
+              <span class="chip chip-soft">新增#${idx + 1} · tone ${25 + idx}</span>
+              ${!locked ? `<span class="chip ${deClass(f.de)}">ΔE ${f.de}</span>` : ''}
             </div>
           </div>
         </div>`;
     });
     KEPT.forEach(k => {
       html += `
-        <div class="film-item locked">
+        <div class="slot-row kept">
           <div class="thumb grey" style="background:#9a9a96">
             <div class="strip" style="background:#777773"></div>
             <div class="brand" style="color:#ffffff">GR III</div>
             <div class="bname" style="color:#ffffff">&nbsp;</div>
             <div class="bspeed" style="color:#ffffff;font-size:9px">${k.name}</div>
           </div>
-          <div class="fi-info">
-            <div class="fi-name">${k.name}</div>
-            <div class="fi-sub">${k.origin} · 保留</div>
+          <div class="slot-info">
+            <div class="slot-name"><span class="num">·</span> ${k.name}</div>
+            <div class="slot-sub"><span class="chip chip-kept">官方保留</span></div>
           </div>
         </div>`;
     });
@@ -517,6 +709,15 @@
     renderDetail();
   }
 
+  /* ===== 中段：颗粒分段控件（Apple Segmented） ===== */
+  const GRAIN_LABELS = ['无', 'High', 'Mid', 'Low'];
+  function grainSegment(sel) {
+    const g = SLOT_GRAIN[sel];
+    // 顺序：Mid / High / Low / 无（默认 Mid 在最左）
+    return [2, 1, 3, 0].map(v =>
+      `<button type="button" class="seg ${g === v ? 'on' : ''}" onclick="setSlotGrain(${sel}, ${v})">${GRAIN_LABELS[v]}</button>`).join('');
+  }
+
   /* ===== 中栏：槽位详情（选定槽位 → 选滤镜 / 颗粒） ===== */
   function renderDetail() {
     const key = SLOT_ASSIGN[selSlot];
@@ -527,95 +728,87 @@
 
     if (!f) {
       document.getElementById('detail').innerHTML = `
-        <div class="v16-note">
+        <div class="note-blue">
           <b>v16 管线说明</b>：这 6 个新增槽位作为「新增影像控制项」追加到机内菜单末尾（官方模式之后，tone 25 起），
           <b>不替换任何官方模式</b>，且天然挨在一起。已启用 <b>12 分区色相</b>（MultiAxial），机内色相校正默认中性。
         </div>
-        <div class="detail-head">
-          <div>
-            <div class="detail-kicker">影像控制 · 新增槽位 #${selSlot + 1}（tone ${tone}）</div>
-            <div class="detail-title">空槽位</div>
-            <div class="detail-sub">还没装胶片，从下面选一款装上。</div>
-          </div>
+        <div class="detail-kicker">影像控制 · 新增槽位 #${selSlot + 1}（tone ${tone}）</div>
+        <div class="detail-title">空槽位</div>
+        <div class="detail-sub">还没装胶片，从下面选一款装上。</div>
+        <div class="field">
+          <div class="field-label">滤镜胶卷 <span class="hint">（本槽位装哪款胶片）</span></div>
+          <select onchange="assignSlot(${selSlot}, this.value)" class="select">${opts}</select>
         </div>
-        <div style="margin-top:16px">
-          <div class="field-label">滤镜胶卷 <span style="color:var(--muted);font-weight:400">（本槽位装哪款胶片）</span></div>
-          <select onchange="assignSlot(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${opts}</select>
-        </div>
-        <div style="margin-top:12px">
-          <div class="field-label">颗粒强度 <span style="color:var(--muted);font-weight:400">（本槽位直出颗粒，逐槽独立）</span></div>
-          <select onchange="setSlotGrain(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${grainOptions(selSlot)}</select>
-          <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px">颗粒烘焙进固件，相机直出 JPG 就带颗粒，换滤镜也不丢。</div>
+        <div class="field">
+          <div class="field-label">颗粒强度 <span class="hint">（本槽位直出颗粒，逐槽独立）</span></div>
+          <div class="segmented">${grainSegment(selSlot)}</div>
+          <div class="mini-note">颗粒烘焙进固件，相机直出 JPG 就带颗粒，换滤镜也不丢。</div>
         </div>
       `;
       return;
     }
 
     document.getElementById('detail').innerHTML = `
-      <div class="v16-note">
+      <div class="note-blue">
         <b>v16 管线说明</b>：这 6 个新增槽位作为「新增影像控制项」追加到机内菜单末尾（官方模式之后，tone 25 起），
         <b>不替换任何官方模式</b>，且天然挨在一起。已启用 <b>12 分区色相</b>（MultiAxial），机内色相校正默认中性。
       </div>
-      <div class="detail-head">
-        <div>
-          <div class="detail-kicker">影像控制 · 新增槽位 #${selSlot + 1}（tone ${tone}）</div>
-          <div class="detail-title">${f.name}</div>
-          <div class="detail-sub">机内菜单名：<b>${f.name}</b></div>
-        </div>
-      </div>
-      <div style="display:flex;align-items:flex-start;gap:16px;margin-top:16px">
+      <div class="detail-kicker">影像控制 · 新增槽位 #${selSlot + 1}（tone ${tone}）</div>
+      <div class="detail-title">${f.name}</div>
+      <div class="detail-sub">机内菜单名：<b>${f.name}</b></div>
+      <div class="detail-body">
         ${boxHTML(f, 'lg')}
-        <div style="flex:1;min-width:0">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-            <span class="de-tag ${deClass(f.de)}">ΔE ${f.de}</span>
+        <div class="detail-main">
+          <div class="meta-row">
+            <span class="chip ${deClass(f.de)}">ΔE ${f.de}</span>
           </div>
-          <div style="font-size:12px;color:var(--muted);line-height:1.7">
+          <div class="spec-list">
             <b>12 分区色相</b>：已启用（默认中性，不做色相偏移）<br>
             <b>RAW 显影</b>：兼容（RAW 回放可对本槽位做影像控制）<br>
             <b>机内位置</b>：新增槽位 #${selSlot + 1}（在官方「高对比黑白」之后，紧挨其他新增槽位）
           </div>
-          <div style="margin-top:12px">
-            <div class="field-label">滤镜胶卷 <span style="color:var(--muted);font-weight:400">（本槽位装哪款胶片）</span></div>
-            <select onchange="assignSlot(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${opts}</select>
+          <div class="field">
+            <div class="field-label">滤镜胶卷 <span class="hint">（本槽位装哪款胶片）</span></div>
+            <select onchange="assignSlot(${selSlot}, this.value)" class="select">${opts}</select>
           </div>
-          <div style="margin-top:12px">
-            <div class="field-label">颗粒强度 <span style="color:var(--muted);font-weight:400">（本槽位直出颗粒，逐槽独立）</span></div>
-            <select onchange="setSlotGrain(${selSlot}, this.value)" style="font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff">${grainOptions(selSlot)}</select>
-            <div style="font-size:11px;color:var(--muted);line-height:1.6;margin:6px 0">颗粒烘焙进固件，相机直出 JPG 就带颗粒，换滤镜也不丢。四档效果参考：</div>
-            <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <div class="field">
+            <div class="field-label">颗粒强度 <span class="hint">（本槽位直出颗粒，逐槽独立）</span></div>
+            <div class="segmented">${grainSegment(selSlot)}</div>
+            <div class="mini-note">颗粒烘焙进固件，相机直出 JPG 就带颗粒，换滤镜也不丢。四档效果参考：</div>
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px">
               <tr style="border-bottom:1px solid var(--line)">
-                <td style="padding:5px 8px;color:var(--muted);width:64px">档位</td>
-                <td style="padding:5px 8px;color:var(--muted)">大致效果</td>
+                <td style="padding:6px 8px;color:var(--ink3);width:64px">档位</td>
+                <td style="padding:6px 8px;color:var(--ink3)">大致效果</td>
               </tr>
               <tr style="border-bottom:1px solid var(--line)">
-                <td style="padding:5px 8px;font-weight:600">无颗粒</td>
-                <td style="padding:5px 8px">画面干净</td>
+                <td style="padding:6px 8px;font-weight:600">无颗粒</td>
+                <td style="padding:6px 8px;color:var(--ink2)">画面干净</td>
               </tr>
               <tr style="border-bottom:1px solid var(--line)">
-                <td style="padding:5px 8px;font-weight:600">Low（弱）</td>
-                <td style="padding:5px 8px">极细颗粒，几乎不可见，适合 Portra 400 / Ektar 100 这类细颗粒片</td>
+                <td style="padding:6px 8px;font-weight:600">Low</td>
+                <td style="padding:6px 8px;color:var(--ink2)">极细颗粒，几乎不可见，适合 Portra 400 / Ektar 100</td>
               </tr>
               <tr style="border-bottom:1px solid var(--line)">
-                <td style="padding:5px 8px;font-weight:600">Mid（中）</td>
-                <td style="padding:5px 8px">中等颗粒，接近 5207 日光片的质感</td>
+                <td style="padding:6px 8px;font-weight:600">Mid</td>
+                <td style="padding:6px 8px;color:var(--ink2)">中等颗粒，接近 5207 日光片的质感</td>
               </tr>
               <tr>
-                <td style="padding:5px 8px;font-weight:600">High（强）</td>
-                <td style="padding:5px 8px">粗颗粒，接近 5219 钨丝灯片 / 迫冲的感觉</td>
+                <td style="padding:6px 8px;font-weight:600">High</td>
+                <td style="padding:6px 8px;color:var(--ink2)">粗颗粒，接近 5219 钨丝灯片 / 迫冲</td>
               </tr>
             </table>
           </div>
           ${curLocked ? `
-          <div style="margin-top:12px;padding:12px;border:1px solid #e0b4b4;background:#fdf3f3;border-radius:8px">
-            <div style="font-size:12px;font-weight:700;color:#c0392b;margin-bottom:6px">🔒 本胶片需解锁</div>
-            <div style="font-size:11px;color:#7f8c8d;line-height:1.6;margin-bottom:8px">
+          <div class="lock-card">
+            <div class="lock-title">🔒 本胶片需解锁</div>
+            <div class="lock-desc">
               ${f.name} 是付费胶片。一个解锁码可一次性解锁全部三款付费胶片
               （Portra 400 / Ektar 100 / Kodak 5219），输入后永久生效。
               免费款「Kodak 5207」可直接使用，两个空槽位可上传你自己的 CUBE / XMP。
             </div>
-            <div style="display:flex;gap:6px">
-              <input id="licenseInput" class="inp" placeholder="粘贴解锁码" style="flex:1;font-size:12px">
-              <button id="licenseApplyBtn" onclick="applyLicense()" style="font-size:12px;padding:5px 12px;border:none;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer">解锁</button>
+            <div class="lock-row">
+              <input id="licenseInput" class="inp" placeholder="粘贴解锁码">
+              <button id="licenseApplyBtn" onclick="applyLicense()" class="btn btn-primary">解锁</button>
             </div>
           </div>
           ` : ''}
@@ -660,18 +853,33 @@
       if (verEl) verEl.textContent = 'v' + (d.version || '1.5.1');
       // 显示实际使用的官方固件路径（让用户知道工具从哪里读的）
       const pn = document.getElementById('fwPathNote');
+      const pill = document.getElementById('fwPill');
       if (pn) {
-        pn.textContent = d.fw_ready ? ('当前使用的固件：' + d.fw_path)
-                                    : ('未找到固件。请放到任意位置后点「重新检测」，或放到：'
-                                       + (d.user_dir || '') + '/official_firmware/');
+        if (d.fw_ready) {
+          pn.style.display = 'none';
+        } else {
+          pn.style.display = 'block';
+          pn.textContent = '未找到固件。请放到任意位置后点「重新检测」，或放到：' + (d.user_dir || '') + '/official_firmware/';
+        }
+      }
+      if (pill) {
+        if (d.fw_ready) {
+          pill.style.display = 'inline-flex';
+          pill.className = 'status-pill';
+          pill.textContent = '环境就绪';
+          dot.className = 'dot ok'; txt.textContent = '环境就绪';
+        } else {
+          pill.style.display = 'inline-flex';
+          pill.className = 'status-pill err';
+          pill.textContent = '缺固件';
+          dot.className = 'dot err'; txt.textContent = '缺少官方固件';
+        }
       }
       _statusD = d;
       refreshModelUI();
       if (d.fw_ready) {
-        dot.className = 'dot ok'; txt.textContent = '环境就绪';
         hideFwGuide();
       } else {
-        dot.className = 'dot err'; txt.textContent = '缺少官方固件';
         showFwGuide();
       }
     } catch (e) {
@@ -686,22 +894,20 @@
     if (!g) {
       g = document.createElement('div');
       g.id = 'fwGuide';
-      g.style.cssText = 'margin:12px 0;padding:14px 16px;border:1px solid #f0d9b0;border-radius:10px;background:#fdf6e8;font-size:12.5px;line-height:1.7;color:#6b4a12';
-      const rl = document.getElementById('resultPanel');
-      // 插入到右栏「生成固件」面板上方，最醒目
-      const buildPanel = document.querySelector('.layout > div:last-child > .panel:first-child');
-      buildPanel.parentNode.insertBefore(g, buildPanel);
+      g.className = 'fw-guide';
+      const buildPanel = document.querySelector('.layout > aside:last-child');
+      buildPanel.insertBefore(g, buildPanel.firstChild);
     }
     g.innerHTML = `
-      <div style="font-weight:700;font-size:13px;margin-bottom:6px">⚠️ 还差一步：导入官方固件</div>
+      <div style="font-weight:700;font-size:13.5px;margin-bottom:6px">⚠️ 还差一步：导入官方固件</div>
       <div>本工具以理光官方固件为底，需要你先自行下载一份 <b>GR III 2.10</b> 官方固件：</div>
-      <ol style="margin:6px 0 6px 18px">
+      <ol>
         <li>前往理光官网下载 GR III 固件 <span class="mono">fwdc239b.bin</span>（2.10 版）</li>
         <li>把 <span class="mono">fwdc239b.bin</span> 放到 <b>桌面</b> 或 <b>下载</b> 文件夹即可（工具会自动找到它）</li>
         <li>回到本页，点击下方「重新检测」</li>
       </ol>
       <div style="margin-top:4px;color:#8a6a33;font-size:11.5px">也可以手动放到：<span class="mono" id="fwUserDir">~/Library/Application Support/GR3FilmTool/official_firmware/</span></div>
-      <button onclick="checkStatus()" style="margin-top:8px;padding:6px 14px;border:1px solid #c9a25a;border-radius:6px;background:#fff;color:#6b4a12;cursor:pointer;font-size:12.5px">重新检测</button>
+      <button onclick="checkStatus()" class="btn" style="margin-top:10px;font-size:12.5px;padding:7px 16px">重新检测</button>
     `;
     // 用后端返回的真实用户目录路径覆盖默认文案（区别于网页版/打包版）
     fetch('/status').then(r => r.json()).then(d => {
@@ -717,16 +923,9 @@
   /* ===== 颗粒模式（逐槽位独立） ===== */
   // SLOT_GRAIN[i] = 0=无 1=High 2=Mid 3=Low（写死烘焙进固件）；默认全部 Mid
   let SLOT_GRAIN = [2, 2, 2, 2, 2, 2];
-  const GRAIN_NAMES = ['无颗粒', 'High（强）', 'Mid（中）', 'Low（弱）'];
-  function grainOptions(sel) {
-    const g = SLOT_GRAIN[sel];
-    // 顺序：Mid / High / Low / 无（默认 Mid 在最上）
-    return [2, 1, 3, 0].map(v =>
-      `<option value="${v}" ${g === v ? 'selected' : ''}>${GRAIN_NAMES[v]}</option>`).join('');
-  }
   function setSlotGrain(idx, v) {
     SLOT_GRAIN[idx] = parseInt(v, 10);
-    renderDetail();   // 重绘详情，让 select 选中态与说明一致
+    renderDetail();   // 重绘详情，让分段控件选中态与说明一致
   }
 
   /* ===== 构建 ===== */
@@ -783,8 +982,8 @@
       </div>`;
 
     st.innerHTML = `
-      <div style="margin:8px 0;padding:12px 14px;border:1px solid ${allPass ? '#bfe3cb' : '#f0e0c0'};border-radius:8px;background:${allPass ? '#e8f4ec' : '#fdf8ee'};line-height:1.6">
-        <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:${allPass ? '#1a7a3c' : '#8a5a16'}">
+      <div class="verify-box ${allPass ? '' : 'warn'}">
+        <div class="vb-title">
           ${allPass ? '✓ 固件验证全部通过，可下载使用' : '⏳ 验证未完全通过，下载已锁定'}
         </div>
         ${line(verifyOk, '完整性核验：4 胶片 + 12 分区色相 + RAW 显影兼容，官方模式逐字节一致' + (verifyOk ? '' : '（' + (v && v.detail || '未通过') + '）'))}
@@ -810,7 +1009,7 @@
         <td>${c.slot_cn}</td>
         <td class="mono">${c.camera_name || c.film}</td>
         <td class="mono">tone ${c.tone}</td>
-        <td><span class="de-tag ${deClass(c.deltaE)}">ΔE ${c.deltaE}</span></td>
+        <td><span class="chip ${deClass(c.deltaE)}">ΔE ${c.deltaE}</span></td>
       </tr>`).join('');
 
     document.getElementById('resultPanel').style.display = 'block';
@@ -875,7 +1074,7 @@
     st.innerHTML = ok.length
       ? `✅ 完成 ${ok.length} 个：${ok.map(r => `${r.name}（ΔE ${r.de}）`).join('、')}`
       : '';
-    if (err.length) st.innerHTML += `<div style="color:var(--warn)">❌ 失败 ${err.length}：${err.map(r => r.name + ' ' + r.error).join('；')}</div>`;
+    if (err.length) st.innerHTML += `<div style="color:var(--warn-ink)">❌ 失败 ${err.length}：${err.map(r => r.name + ' ' + r.error).join('；')}</div>`;
     inp.value = '';
     await loadLibrary();
     renderList(); renderDetail();
@@ -925,7 +1124,7 @@
     st.innerHTML = ok.length
       ? `✅ 完成 ${ok.length} 个：${ok.map(r => `${r.name}（ΔE ${r.de}）`).join('、')}`
       : '';
-    if (err.length) st.innerHTML += `<div style="color:var(--warn)">❌ 失败 ${err.length}：${err.map(r => r.name + ' ' + r.error).join('；')}</div>`;
+    if (err.length) st.innerHTML += `<div style="color:var(--warn-ink)">❌ 失败 ${err.length}：${err.map(r => r.name + ' ' + r.error).join('；')}</div>`;
     inp.value = '';
     await loadLibrary();
     renderList(); renderDetail();
@@ -945,7 +1144,7 @@
     ];
     document.getElementById('libCount').textContent = all.length;
     if (!all.length) {
-      box.innerHTML = '<div class="mini-note" style="color:var(--muted)">还没有胶片。</div>';
+      box.innerHTML = '<div class="mini-note" style="color:var(--ink3)">还没有胶片。</div>';
       return;
     }
     let html = '';
@@ -955,24 +1154,22 @@
         html += `
           <div class="lib-item">
             ${boxHTML(f)}
-            <div>
+            <div class="lib-info">
               <div class="lib-name">${f.name} <span class="mini-note" style="margin-left:4px">内置</span></div>
-              <div class="lib-meta">
-                <span class="de-tag ${deClass(f.de)}">ΔE ${f.de}</span>
-              </div>
+              <div class="lib-meta"><span class="chip ${deClass(f.de)}">ΔE ${f.de}</span></div>
             </div>
           </div>`;
       } else {
         const f = item.lf;
         const f2 = libToFilm(f);
-        const deCls = f.de < 1.8 ? 'de-good' : (f.de < 2.5 ? 'de-mid' : 'de-bad');
+        const deCls = f.de < 1.8 ? 'chip-de-good' : (f.de < 2.5 ? 'chip-de-mid' : 'chip-de-bad');
         html += `
           <div class="lib-item">
             ${boxHTML(f2)}
-            <div>
+            <div class="lib-info">
               <div class="lib-name">${f.name} <span class="mini-note" style="margin-left:4px">${f.preset ? '预设' : '自建'}</span></div>
               <div class="lib-meta">
-                <span class="de-tag ${deCls}">ΔE ${f.de}</span>
+                <span class="chip ${deCls}">ΔE ${f.de}</span>
                 ${f.gray && f.gray.length ? `<span class="mini-note mono">灰轴 ${grayFlag(f.gray)}</span>` : ''}
               </div>
             </div>
