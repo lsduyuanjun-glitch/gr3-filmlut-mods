@@ -20,7 +20,12 @@
 """
 import os
 
-REPO = os.path.dirname(os.path.abspath(SPECPATH))
+# SPECPATH 在 PyInstaller 中就是 spec 文件所在**目录**（字符串），
+# 旧写法套 dirname 会指到仓库上一层 → os.listdir 收集引擎 .py 全部落空
+# （CI 打包版启动即缺引擎脚本 / index.html，报「index.html 未找到」）。
+REPO = os.path.abspath(SPECPATH)
+if not os.path.isfile(os.path.join(REPO, 'gr3_tool.win.spec')):
+    REPO = os.path.dirname(REPO)  # 兜底：万一未来 SPECPATH 传的是文件路径
 WEBTOOL = os.path.join(REPO, 'webtool')
 
 # ————————————————————————————————————————————————
@@ -66,6 +71,8 @@ hiddenimports = [
     'emu', 'fw', 'run_tuning', 'verify_slots16',
     # 网页后端
     'film_pipeline', 'film_library', 'license', 'build_firmware', 'paths',
+    # 付费解锁 ed25519 验签（license.py 惰性 import，静态分析抓不到；漏掉=解锁崩溃）
+    'cryptography', 'cryptography.hazmat.primitives.asymmetric.ed25519',
     'cube_fit', 'joint_fit', 'lab_fit', 'xmp_reader', 'xmp2cube',
     # 第三方编解码器（gr4_editor 由 codec_path 运行时加 sys.path，
     # 但这里显式列出核心模块，确保 PyInstaller 收集到）
