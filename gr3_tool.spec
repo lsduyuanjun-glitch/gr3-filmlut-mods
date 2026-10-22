@@ -18,7 +18,25 @@
 4. 显式排除重型无关库：只依赖 numpy/scipy/Pillow/colour-science/tifffile/
    capstone/unicorn，其余全部排除，避免把环境里的 torch 之类拖进来（体积从 1GB 降到 ~100MB）。
 """
-import os
+import os, sys
+
+# —— 构建环境自举：原生窗口壳（pywebview + PyObjC）缺失时现场安装 ——
+# spec 在 CI 的裸 Python 环境里执行，hiddenimports 需要这些包真实存在。
+# 在 spec 里自举就不必改动 CI workflow（改 .github/ 需要 token 有 workflow 权限）。
+def _ensure_native_window_deps():
+    try:
+        import webview  # noqa: F401
+        import objc  # noqa: F401
+        return
+    except ImportError:
+        pass
+    import subprocess
+    print('[spec] installing native-window dependencies (pywebview + pyobjc)...')
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install',
+                           'pywebview', 'pyobjc', 'bottle', 'proxy_tools'])
+
+if sys.platform == 'darwin':
+    _ensure_native_window_deps()
 
 # SPECPATH 在 PyInstaller 中就是 spec 文件所在**目录**（字符串），
 # 旧写法 dirname(dirname) 会指到仓库上一层 → 循环收集引擎 .py 全部落空（打包版启动即 ModuleNotFoundError）。
