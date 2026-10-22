@@ -45,6 +45,34 @@ if not os.path.isfile(os.path.join(REPO, 'gr3_tool.spec')):
     REPO = os.path.dirname(REPO)  # 兜底：万一未来 SPECPATH 传的是文件路径
 WEBTOOL = os.path.join(REPO, 'webtool')
 
+# —— 打包前自检（防回归）—————————————————————————————————
+# 历史上因 REPO 多套一层目录，导致引擎 .py / index.html 全没进包，
+# 产出的 CI 包启动即报「index.html 未找到」。这里在真正打包前先断言关键文件存在，
+# 任一缺失就中止构建（exit 2），绝不让坏包有机会被发布。
+def _build_guard():
+    import sys as _sys
+    critical = [
+        (os.path.join(WEBTOOL, 'index.html'), '前端 index.html'),
+        (os.path.join(REPO, 'make_slots15.py'), '引擎 make_slots15.py'),
+        (os.path.join(REPO, 'armasm.py'), '引擎 armasm.py'),
+        (os.path.join(WEBTOOL, 'paths.py'), '后端 paths.py'),
+        (os.path.join(WEBTOOL, 'app.py'), 'macOS 入口 app.py'),
+        (os.path.join(WEBTOOL, 'server.py'), 'Windows 入口 server.py'),
+    ]
+    missing = [label for p, label in critical if not os.path.exists(p)]
+    if missing:
+        _sys.stderr.write(
+            "\n[BUILD FATAL] 资源根判断可能有误，以下关键文件缺失：\n  - "
+            + "\n  - ".join(missing) + "\n"
+            "  REPO    = " + REPO + "\n"
+            "  WEBTOOL = " + WEBTOOL + "\n"
+            "  若是历史 bug（REPO 多套一层目录），请修正 SPECPATH 处理。\n"
+            "  已中止打包，避免产出坏包。\n"
+        )
+        _sys.exit(2)
+
+_build_guard()
+
 # ————————————————————————————————————————————————
 # 数据文件（相对 REPO，打包后平铺到 _internal 根，使 RESOURCE_DIR == _internal）
 # ————————————————————————————————————————————————

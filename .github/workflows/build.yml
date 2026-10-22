@@ -57,6 +57,25 @@ jobs:
           fi
           echo "artifact=${{ matrix.artifact }}.zip" >> "$GITHUB_ENV"
 
+      - name: Verify artifact integrity (block broken releases)
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, zipfile, sys
+          art = "${{ matrix.artifact }}.zip"
+          # 这些文件一旦缺失，运行时会报「index.html 未找到」或 ModuleNotFoundError，
+          # 历史上正是这类坏包被发布出去。缺失即故意让本 job 失败，release 不会生成。
+          required = ['index.html', 'make_slots15.py', 'armasm.py', 'paths.py']
+          if not os.path.exists(art):
+              print("FATAL: artifact %s not found" % art); sys.exit(1)
+          names = [os.path.basename(n) for n in zipfile.ZipFile(art).namelist()]
+          missing = [r for r in required if r not in names]
+          if missing:
+              print("FATAL: %s is MISSING required files %s — would ship a broken build. Failing on purpose." % (art, missing))
+              sys.exit(1)
+          print("OK: %s contains all required files %s" % (art, required))
+          PY
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
