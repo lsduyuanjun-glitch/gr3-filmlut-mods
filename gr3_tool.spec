@@ -109,6 +109,34 @@ for f in ('build_firmware.py', 'film_library.py', 'license.py', 'paths.py', 'ser
 # 初始胶片库（首次运行时播种到用户目录）
 datas.append(('film_library.json', '.'))
 
+# —— unicorn 原生库必须显式收集（v1.5.6）——
+# unicorn 2.x 是纯 Python 绑定 + ctypes 加载 unicorn/lib/ 下的外置动态库
+# （libunicorn.2.dylib）。PyInstaller 静态分析收不到 ctypes 外置库，
+# v1.5.5 因此核验崩在「Failed to load the Unicorn dynamic library」。
+# 这里按包内真实布局整体收进 datas（跳过 25MB 静态库 .a），运行时
+# server.py 再用 LIBUNICORN_PATH 指向它。
+def _collect_unicorn_lib():
+    import glob
+    import importlib.util
+    import sys as _sys
+    sp = importlib.util.find_spec('unicorn')
+    if sp is None or sp.origin is None:
+        _sys.stderr.write(
+            "\n[BUILD FATAL] 构建环境未安装 unicorn（pip install unicorn==2.1.4）。\n"
+            "  缺它核验链在冻结版必崩。已中止打包。\n")
+        _sys.exit(2)
+    lib_dir = os.path.join(os.path.dirname(os.path.abspath(sp.origin)), 'lib')
+    files = [(p, os.path.join('unicorn', 'lib'))
+             for p in sorted(glob.glob(os.path.join(lib_dir, '*')))
+             if os.path.isfile(p) and not p.endswith('.a')]
+    if not files:
+        _sys.stderr.write(
+            "\n[BUILD FATAL] unicorn 包里没找到原生库：%s\n  已中止打包。\n" % lib_dir)
+        _sys.exit(2)
+    return files
+
+datas += _collect_unicorn_lib()
+
 # ————————————————————————————————————————————————
 # 隐式导入（动态 import 的模块，静态分析抓不到）
 # ————————————————————————————————————————————————
@@ -133,6 +161,12 @@ hiddenimports = [
     'tifffile', 'colour',
     # 反汇编 / 模拟（verify 用）
     'capstone', 'unicorn', 'unicorn.arm_const', 'unicorn.arm64_const',
+    # unicorn 2.x 的 arch 子模块按 arch 名**动态 import**，静态分析抓不到，
+    # 冻结版缺它报 No module named 'unicorn.unicorn_py3.arch.arm'（v1.5.6 实测）
+    'unicorn.unicorn_py3', 'unicorn.unicorn_py3.unicorn',
+    'unicorn.unicorn_py3.arch', 'unicorn.unicorn_py3.arch.types',
+    'unicorn.unicorn_py3.arch.arm', 'unicorn.unicorn_py3.arch.arm64',
+    'unicorn.unicorn_py3.arch.intel',
     # 原生窗口壳（PyWebview + PyObjC 的 Cocoa/WebKit 后端）
     'webview', 'webview.platforms.cocoa', 'webview.http',
     'bottle', 'proxy_tools',

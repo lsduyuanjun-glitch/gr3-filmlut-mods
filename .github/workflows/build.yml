@@ -94,7 +94,16 @@ jobs:
           if missing_b or missing_s:
               print("FATAL: %s is MISSING required files -> basenames:%s substrings:%s — would ship a broken build. Failing on purpose." % (art, missing_b, missing_s))
               sys.exit(1)
-          print("OK: %s contains all %d required files + %d required subtrees" % (art, len(required_basenames), len(required_substrings)))
+          # v1.5.5 教训：unicorn 原生库是 ctypes 外置 dylib/dll，PyInstaller 不会自动
+          # 收进包，冻结版核验崩在「Failed to load the Unicorn dynamic library」。
+          # 这里强制校验包内必须带 unicorn/lib/ 下的原生库，缺则不发 Release。
+          uni = [n for n in names
+                 if os.path.basename(n).startswith('libunicorn')
+                 or os.path.basename(n).lower() == 'unicorn.dll']
+          if not uni:
+              print("FATAL: %s is MISSING unicorn native lib (libunicorn*/unicorn.dll) — verify chain would crash. Failing on purpose." % art)
+              sys.exit(1)
+          print("OK: %s contains all %d required files + %d required subtrees + unicorn native lib (%s)" % (art, len(required_basenames), len(required_substrings), uni[0]))
           PY
 
       - name: Upload artifact

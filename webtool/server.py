@@ -28,6 +28,31 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 import paths  # noqa: E402
 
+# —— 冻结版 unicorn 动态库定位（必须在任何 import unicorn 之前执行）——
+# unicorn 2.x 是纯 Python 绑定 + ctypes 加载外置原生库（mac: libunicorn.2.dylib /
+# win: unicorn.dll）。PyInstaller 静态分析收不到 ctypes 外置库，v1.5.5 因此核验
+# 崩在「Failed to load the Unicorn dynamic library」。spec 已把该库按 unicorn/lib/
+# 布局收进包；unicorn 加载器的第一候选就是 LIBUNICORN_PATH 环境变量，这里指过去。
+def _setup_unicorn_lib_path():
+    if not getattr(sys, 'frozen', False):
+        return
+    import glob
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    bases = [
+        os.path.join(exe_dir, '..', 'Resources'),   # macOS BUNDLE datas
+        os.path.join(exe_dir, '..', 'Frameworks'),  # macOS BUNDLE binaries
+        os.path.join(exe_dir, '_internal'),         # Windows onedir
+        getattr(sys, '_MEIPASS', '') or exe_dir,
+        exe_dir,
+    ]
+    for b in bases:
+        cand = os.path.abspath(os.path.join(b, 'unicorn', 'lib'))
+        if glob.glob(os.path.join(cand, 'libunicorn*')) or \
+                glob.glob(os.path.join(cand, 'unicorn.dll')):
+            os.environ.setdefault('LIBUNICORN_PATH', cand)
+            return
+_setup_unicorn_lib_path()
+
 RESOURCE = paths.RESOURCE_DIR
 USER_DIR = paths.USER_DIR
 paths.ensure_user_dirs()          # 建好可写目录 + 首次运行播种胶片库
@@ -59,7 +84,7 @@ CUBE_DIR = paths.CUBE_DIR
 # ★ 版本号：启动时探测「占用端口的旧进程」是否同版本；不同版本（旧 App 还在跑）就自动
 #   kill 它再接管端口。否则用户解压新 App 双击，新进程会因端口被旧进程占用而「复用旧实例」，
 #   浏览器永远显示旧界面（用户反复遇到的「和之前没区别」）。
-APP_VERSION = '1.5.5'
+APP_VERSION = '1.5.6'
 
 
 def _open_browser():
