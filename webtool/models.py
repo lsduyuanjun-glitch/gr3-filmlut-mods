@@ -53,9 +53,10 @@ MODELS: dict[str, ModelSpec] = {
             "append_tone_base": 25,   # 胶片作为新增影像控制项，追加在 tone 25+ 槽位
             "multiaxial": True,       # 12 分区色相校正
             "rawdev": True,           # RAW 显影兼容
+            "icon_scheme": "gr3",     # 图标 ID 用上游验证过的 0x05-0x07+0x1D/0x2D/0x2E（无 HDF）
         },
         supported=True,
-        note="已逆向验证：胶片追加 + 颗粒引擎 + 解锁码全家桶均跑通（v1.5.2）。",
+        note="已逆向验证：胶片追加 + 颗粒引擎 + 解锁码全家桶均跑通（v1.5.2）。普通 GR III（无 HDF）。",
     ),
     "gr3x": ModelSpec(
         id="gr3x",
@@ -72,12 +73,18 @@ MODELS: dict[str, ModelSpec] = {
         id="gr3hdf",
         display_name="Ricoh GR III HDF",
         family="GR III HDF",
-        official_firmware_sha256="",  # TODO(阶段2)
-        official_firmware_version="",
+        official_firmware_sha256="d6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4",  # 与 GR III 同一份固件
+        official_firmware_version="2.10",
         firmware_download="",
-        patch={},
-        supported=False,
-        note="比 GR III 多 HDF 滤镜；先啃 GR IIIx 再跟。",
+        patch={
+            "modules": ["make_slots15", "make_slots16", "gr3patch", "make_grain_native"],
+            "append_tone_base": 25,
+            "multiaxial": True,
+            "rawdev": True,
+            "icon_scheme": "hdf",   # 图标 ID 用 0x2A0 扩展区（0x05-0x07 是 HDF 开关图标会冲突）
+        },
+        supported=True,
+        note="与 GR III 同一份 2.10 固件；差异仅在菜单图标 ID 方案（HDF 有「HDF 开关」图标占 0x05-0x07）。",
     ),
     "gr3xhdf": ModelSpec(
         id="gr3xhdf",

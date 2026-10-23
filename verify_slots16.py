@@ -35,6 +35,11 @@ from make_film import q13_matrix
 import make_slots15 as M
 import make_slots16 as M16
 
+# 机型分家：verify 按环境变量 GR3_MODEL 选择图标方案，与 build_firmware 的 model 参数一致。
+# 默认 gr3hdf（旧行为）；gr3 = 普通 GR III（0x05-0x07 方案）。
+import os as _os
+M.ICON_IDS = M._icon_ids_for(_os.environ.get('GR3_MODEL', 'gr3hdf'))
+
 R2Y, CSP = 0x120, 0x120 + 0x1180
 MA_LO, MA_HI = 400 - 0x120, 2920 - 0x120          # MultiAxial registers, R2Y-relative bytes
 ok = True

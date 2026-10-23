@@ -466,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
 
         # 构建成功后自动核验（进程内；核验失败不影响产出，只影响「可下载」状态）
         try:
-            verify = self._verify_firmware(OUT_PATH, films_order, fw_path=fw_path)
+            verify = self._verify_firmware(OUT_PATH, films_order, fw_path=fw_path, model=model)
         except Exception as e:
             verify = {'ok': False, 'detail': f'核验异常：{str(e)[-200:]}'}
         result['verify'] = verify
@@ -506,7 +506,7 @@ class Handler(BaseHTTPRequestHandler):
         os.environ['GR3_WORK'] = root
         return None
 
-    def _verify_firmware(self, out_path, films_order=None, fw_path=None):
+    def _verify_firmware(self, out_path, films_order=None, fw_path=None, model='gr3hdf'):
         """自动核验 v16 固件完整性，返回 {ok, detail}。进程内执行 verify_slots16。"""
         import io
         import contextlib
@@ -553,6 +553,9 @@ class Handler(BaseHTTPRequestHandler):
 
         verify_py = os.path.join(RESOURCE, 'verify_slots16.py')
         old_argv, old_cwd = sys.argv, os.getcwd()
+        # 机型分家：让 verify 按机型选图标方案（普通 GR III 用 0x05-0x07，HDF 用 0x2A0 扩展区）
+        old_model = os.environ.get('GR3_MODEL')
+        os.environ['GR3_MODEL'] = model or 'gr3hdf'
         buf = io.StringIO()
         try:
             sys.argv = [verify_py, FW, out_path] + args
@@ -566,6 +569,10 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             sys.argv = old_argv
             os.chdir(old_cwd)
+            if old_model is None:
+                os.environ.pop('GR3_MODEL', None)
+            else:
+                os.environ['GR3_MODEL'] = old_model
             for tf in tmp_files:
                 gr3_tmp.cleanup(tf)
 

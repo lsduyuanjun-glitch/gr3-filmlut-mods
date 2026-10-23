@@ -145,7 +145,7 @@ def build(in_path, out_path, films_order=None, raw_nr_above=8000,
         if grain_native or grain_fixed is not None or grains is not None:
             img._grain_ext = img.grow(64 * 1024)
             img._grain_ext_cur = img._grain_ext
-        info = M15.patch(img, films, raw_nr_above=raw_nr_above)
+        info = M15.patch(img, films, raw_nr_above=raw_nr_above, model=model)
         info['_multiaxial'] = M16.patch_ma(img, films)
         info['_rawdev'] = M16.patch_rawdev(img, films, info)
         info['_exif_tone'] = M16.patch_exif_tone(img, films)

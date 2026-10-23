@@ -66,11 +66,15 @@ SID0 = 0x380                                # string ids of the film names
 # 720x360; the GR III shows 0x1E) and GR IIIx TELE / 71mm crop (0x2D, 0x2E). 0x05-0x07 are 40x40 and are redrawn in
 # place; 0x1D/0x2D/0x2E get 40x40 descriptors inside 0x1D's pixel area. Only for a GR III without HDF.
 #
-# HDF 兼容修复（Duccio 本地改造）：0x05-0x07 在 HDF 机型上是「HDF 开关」图标，胶片若占用会与之冲突。
-# 6 个胶片（英泽君 4 + duccio 双胶片）只取安全区（0x1D/0x2D/0x2E 为 GR IIIx 专属，GR III HDF 不占用；
-# 0x2A0-0x2A2 为新增图标区），跳过 0x05-0x07，从而在 GR III HDF 上也能安全使用。
-# 注意：仅支持 ≤6 个胶片（超出 6 个需另找安全 icon ID）。
-ICON_IDS = (0x1D, 0x2D, 0x2E, 0x2A0, 0x2A1, 0x2A2)
+# ★ 机型分家（2026-10-24 修复普通 GR III 进影像控制菜单关机）：
+#   上游原作者这套 ICON_IDS 是「无 HDF 的普通 GR III」验证过的方案。此前"Duccio 本地改造"为了兼容
+#   GR III HDF，把前 3 个从 0x05-0x07 换成 0x2A0-0x2A2（新增扩展区），结果普通 GR III 进菜单时
+#   走到 0x2A0 扩展区 hook 跳错地址 → 相机保护性关机。故按机型拆成两套：
+#     - GR III（普通）：(0x05, 0x06, 0x07, 0x1D, 0x2D, 0x2E) —— 上游验证过，前三个原地重绘（无扩展区 hook）
+#     - GR III HDF：     (0x1D, 0x2D, 0x2E, 0x2A0, 0x2A1, 0x2A2) —— 0x05-0x07 在 HDF 是「HDF 开关」图标会冲突，故用扩展区
+ICON_IDS_GR3 = (0x05, 0x06, 0x07, 0x1D, 0x2D, 0x2E)   # 普通 GR III（无 HDF）：上游逆向验证
+ICON_IDS_HDF = (0x1D, 0x2D, 0x2E, 0x2A0, 0x2A1, 0x2A2)  # GR III HDF：跳过 0x05-0x07（HDF 开关图标）
+ICON_IDS = ICON_IDS_HDF                       # 默认保持旧行为（GR III HDF），由 model 参数切换
 NEW_ICON0, ICON_BOUND = 0x2A0, 0x29E          # ids >= NEW_ICON0 served from a descriptor table
 ICON_G1_FAIL, ICON_G2_FAIL = 0x53209FC4, 0x53209FF8   # id getters (width / height): out-of-range path 'mov r0,#0'
 ICON_DRAW_BOUND, ICON_DRAW_AT, ICON_DRAW_RET = 0x5320A7CC, 0x5320A80C, 0x5320A814   # draw fn 0x5320A7AC
@@ -218,23 +222,36 @@ def appended(films):
     return m
 
 
-def patch(img, films, raw_nr_above=None):
-    """films: [(name, display name, fit, replaced stock tone or None)]; appended films first, in menu order."""
+def _icon_ids_for(model):
+    """按机型返回安全图标 ID 方案。普通 GR III（无 HDF）用上游验证过的 0x05-0x07+0x1D/0x2D/0x2E，
+    GR III HDF 用扩展区方案（0x05-0x07 在 HDF 是「HDF 开关」图标会冲突）。"""
+    if model in ('gr3hdf', 'gr3xhdf', 'hdf'):
+        return ICON_IDS_HDF
+    return ICON_IDS_GR3
+
+
+def patch(img, films, raw_nr_above=None, model='gr3hdf'):
+    """films: [(name, display name, fit, replaced stock tone or None)]; appended films first, in menu order.
+
+    model: 机型 id（'gr3' = 普通 GR III，'gr3hdf' = GR III HDF）。决定图标 ID 方案——这是
+    普通 GR III 进影像控制菜单关机的关键：HDF 用 0x2A0 扩展区，普通 GR III 必须用 0x05-0x07。
+    """
+    icon_ids = _icon_ids_for(model)
     n = len(films)
     m = appended(films)
     # 数量护栏：胶片数超上限时给明确的中文报错，而不是 assert / struct.error 崩溃。
-    # LEGACY_SLOTS（9 个遗留槽位）是固件里可安全占用的记录槽上限；ICON_IDS（6 个安全
+    # LEGACY_SLOTS（9 个遗留槽位）是固件里可安全占用的记录槽上限；icon_ids（6 个安全
     # 图标 ID）是菜单图标的硬上限——第 7 个胶片会在 icon_tab 处 struct.error 崩掉。
     if n < 1:
         raise ValueError('至少需要一个胶片才能生成固件')
     if n > len(LEGACY_SLOTS):
         raise ValueError(
             f'胶片数量 {n} 超出固件可安全支持的上限 {len(LEGACY_SLOTS)} 个（遗留槽位不足）')
-    if n > len(ICON_IDS):
+    if n > len(icon_ids):
         raise ValueError(
-            f'胶片数量 {n} 超出当前图标区上限 {len(ICON_IDS)} 个。'
-            f'机内菜单每个胶片需要一个安全图标 ID，目前只逆向出 {len(ICON_IDS)} 个；'
-            f'请先删减到 {len(ICON_IDS)} 个以内，或等待后续版本扩充图标区。')
+            f'胶片数量 {n} 超出当前图标区上限 {len(icon_ids)} 个。'
+            f'机内菜单每个胶片需要一个安全图标 ID，目前只逆向出 {len(icon_ids)} 个；'
+            f'请先删减到 {len(icon_ids)} 个以内，或等待后续版本扩充图标区。')
     space = Space(REGIONS)
     lib = [img.word(CURVE_LIB + 4 * i) for i in range(12)]
     regions = merged_regions([lib[i] for i in CURVE_SLOTS_FREE])
@@ -371,8 +388,8 @@ def patch(img, films, raw_nr_above=None):
         bxlo lr
         cmp r1, #0xa
         b abs({NAME_FN + 4:#x})''')
-    icon_tab = data(struct.pack(f'<{n}H', *ICON_IDS[:n]), 'icon id table')
-    n_new = sum(1 for i in ICON_IDS[:n] if i >= NEW_ICON0)
+    icon_tab = data(struct.pack(f'<{n}H', *icon_ids[:n]), 'icon id table')
+    n_new = sum(1 for i in icon_ids[:n] if i >= NEW_ICON0)
     desc_tab = data(bytes(8 * max(n_new, 1)), 'icon descriptors (new ids)')
     if n_new:
         for fail, field in ((ICON_G1_FAIL, 0), (ICON_G2_FAIL, 2)):
@@ -515,16 +532,18 @@ def patch(img, films, raw_nr_above=None):
     info['_code'] = dict(n_tone_switches=n_sw, n_checks=n_chk, idx_table=hex(idx_table), entries=hex(entries),
                          space=[(name, hex(at), size) for name, at, size in space.used + kspace.used],
                          free_left=[(hex(a), b - a) for a, b in space.free + kspace.free])
-    info['_icons'] = patch_film_icons(img, [f[0] for f in films], desc_tab)
+    info['_icons'] = patch_film_icons(img, [f[0] for f in films], desc_tab, icon_ids)
     if raw_nr_above:
         from raw_nr import patch_raw_nr_min_iso, above_index
         info['_raw_nr_above'] = patch_raw_nr_min_iso(img, first=above_index(raw_nr_above))
     return info
 
 
-def patch_film_icons(img, keys, desc_tab):
+def patch_film_icons(img, keys, desc_tab, icon_ids=None):
     """Point ICON_IDS[3:] at 40x40 slices of CARVE_FROM's pixels (new ids: descriptors in desc_tab) and draw a
     labelled film-strip icon per film."""
+    if icon_ids is None:
+        icon_ids = ICON_IDS
     from make_icons import descriptor, get_icon, render, iconbin, CATALOG
     frame = get_icon(img, FRAME_ICON)
     assert frame.shape == (40, 40, 4)
@@ -532,7 +551,7 @@ def patch_film_icons(img, keys, desc_tab):
     assert (w, h) == (720, 360)
     j = 0
     out = {}
-    for key, icon_id in zip(keys, ICON_IDS):
+    for key, icon_id in zip(keys, icon_ids):
         if icon_id >= NEW_ICON0:
             d = desc_tab + 8 * (icon_id - NEW_ICON0)
         else:

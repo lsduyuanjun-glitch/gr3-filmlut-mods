@@ -838,7 +838,13 @@
     const mn = document.getElementById('modelNote');
     if (mn) {
       const ready = _statusD.fw_by_model && _statusD.fw_by_model[sel];
-      mn.textContent = ready ? `已检测到 ${sel} 官方固件` : '请放入对应机型的官方固件（GR IIIx / HDF 系列待开放）';
+      if (sel === 'gr3') {
+        mn.textContent = ready ? '已检测到 GR III 官方固件 · 适用普通 GR III（无 HDF）' : '请放入 GR III 官方固件（fwdc239b.bin，普通 GR III / HDF 通用）';
+      } else if (sel === 'gr3hdf') {
+        mn.textContent = ready ? '已检测到 GR III HDF 官方固件 · 适用带 HDF 滤镜的机型' : '请放入 GR III 官方固件（fwdc239b.bin，普通 GR III / HDF 通用）';
+      } else {
+        mn.textContent = ready ? `已检测到 ${sel} 官方固件` : '请放入对应机型的官方固件（GR IIIx 系列待开放）';
+      }
     }
   }
 
