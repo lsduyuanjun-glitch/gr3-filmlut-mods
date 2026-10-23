@@ -35,6 +35,40 @@ def _pick_free_port(start=8310, tries=60):
     return start
 
 
+class _Api:
+    """暴露给前端 JS 的原生能力（window.pywebview.api.*）。
+
+    v1.5.7 修复：WKWebView 原生窗口不处理 Content-Disposition: attachment，
+    点「下载固件」静默无反应。这里提供原生保存对话框，把生成的固件
+    复制到用户指定的位置。
+    """
+
+    def save_firmware(self):
+        import webview
+        import shutil
+        import paths
+        src = os.path.join(paths.OUTPUT_DIR, 'gr3_film_mods_custom.bin')
+        if not os.path.exists(src):
+            return {'ok': False, 'error': '固件文件不存在，请先「生成固件」'}
+        win = webview.windows[0] if webview.windows else None
+        if win is None:
+            return {'ok': False, 'error': '窗口未就绪'}
+        dest = win.create_file_dialog(
+            webview.SAVE_DIALOG,
+            save_filename='gr3_film_mods_custom.bin',
+        )
+        # macOS 返回路径字符串或列表（取决于后端），统一处理
+        if isinstance(dest, (list, tuple)):
+            dest = dest[0] if dest else None
+        if not dest:
+            return {'ok': False, 'error': 'cancelled'}
+        try:
+            shutil.copyfile(src, dest)
+            return {'ok': True, 'path': dest}
+        except Exception as e:  # noqa: BLE001
+            return {'ok': False, 'error': f'保存失败：{e!r}'}
+
+
 def _main():
     port = _pick_free_port()
     os.environ['GR3_PORT'] = str(port)
@@ -64,6 +98,7 @@ def _main():
             height=840,
             resizable=True,
             background_color='#0e0e10',
+            js_api=_Api(),
         )
         webview.start(gui='cocoa')
     except Exception as e:  # noqa: BLE001

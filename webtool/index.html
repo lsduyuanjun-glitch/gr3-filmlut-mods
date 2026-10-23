@@ -1004,6 +1004,28 @@
       hint.style.display = 'none';
     }
 
+    // v1.5.7：原生窗口（WKWebView）不处理 attachment 下载，点「下载固件」静默无反应。
+    // 原生环境改走 pywebview API 弹系统保存对话框；浏览器模式保持 <a download> 原行为。
+    dl.addEventListener('click', function (ev) {
+      const api = window.pywebview && window.pywebview.api;
+      if (!api || !api.save_firmware) return;  // 浏览器模式：走默认下载
+      if (!dl.classList.contains('ready')) { ev.preventDefault(); return; }
+      ev.preventDefault();
+      const old = dl.textContent;
+      dl.textContent = '⏳ 请在弹出窗口选择保存位置…';
+      api.save_firmware().then(function (r) {
+        if (r && r.ok) {
+          dl.textContent = '✓ 已保存到：' + r.path;
+          setTimeout(function () { dl.textContent = old; }, 6000);
+        } else if (r && r.error === 'cancelled') {
+          dl.textContent = old;
+        } else {
+          dl.textContent = '✗ ' + (r && r.error || '保存失败');
+          setTimeout(function () { dl.textContent = old; }, 6000);
+        }
+      }).catch(function () { dl.textContent = old; });
+    });
+
     const rows = d.changed.map(c => `
       <tr>
         <td>${c.slot_cn}</td>
