@@ -222,7 +222,19 @@ def patch(img, films, raw_nr_above=None):
     """films: [(name, display name, fit, replaced stock tone or None)]; appended films first, in menu order."""
     n = len(films)
     m = appended(films)
-    assert 1 <= n <= len(LEGACY_SLOTS)
+    # 数量护栏：胶片数超上限时给明确的中文报错，而不是 assert / struct.error 崩溃。
+    # LEGACY_SLOTS（9 个遗留槽位）是固件里可安全占用的记录槽上限；ICON_IDS（6 个安全
+    # 图标 ID）是菜单图标的硬上限——第 7 个胶片会在 icon_tab 处 struct.error 崩掉。
+    if n < 1:
+        raise ValueError('至少需要一个胶片才能生成固件')
+    if n > len(LEGACY_SLOTS):
+        raise ValueError(
+            f'胶片数量 {n} 超出固件可安全支持的上限 {len(LEGACY_SLOTS)} 个（遗留槽位不足）')
+    if n > len(ICON_IDS):
+        raise ValueError(
+            f'胶片数量 {n} 超出当前图标区上限 {len(ICON_IDS)} 个。'
+            f'机内菜单每个胶片需要一个安全图标 ID，目前只逆向出 {len(ICON_IDS)} 个；'
+            f'请先删减到 {len(ICON_IDS)} 个以内，或等待后续版本扩充图标区。')
     space = Space(REGIONS)
     lib = [img.word(CURVE_LIB + 4 * i) for i in range(12)]
     regions = merged_regions([lib[i] for i in CURVE_SLOTS_FREE])
