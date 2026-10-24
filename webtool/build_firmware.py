@@ -141,7 +141,7 @@ def build(in_path, out_path, films_order=None, raw_nr_above=8000,
 
         # 执行 v16 patch
         from gr3patch import Image
-        img = Image(in_path)
+        img = Image(in_path, model=model)
         if grain_native or grain_fixed is not None or grains is not None:
             img._grain_ext = img.grow(64 * 1024)
             img._grain_ext_cur = img._grain_ext

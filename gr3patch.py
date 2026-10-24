@@ -8,23 +8,48 @@ from gr4_editor.firmware import _repack_frames
 BASE, DSRC, DDST, DLEN = 0x53000000, 0x5407B540, 0x55000000, 0x3A080
 EXPECT_SHA = 'd6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4'
 
+# 各机型官方固件 SHA（按 model id 识别）。GR IIIx 系列共用 fwdc243b 1.70。
+MODEL_SHA = {
+    'gr3':     'd6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4',
+    'gr3hdf':  'd6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4',
+    'gr3x':    'aa8e3ae1349d94e83be381c20530e41d5e57b75c27ef24ba81c7b017d6c11592',
+    'gr3xhdf': 'aa8e3ae1349d94e83be381c20530e41d5e57b75c27ef24ba81c7b017d6c11592',
+}
+
 class Image:
-    def __init__(self, path):
+    def __init__(self, path, model='gr3'):
+        self.model = model
         self.candidate = open(path, 'rb').read()
-        if hashlib.sha256(self.candidate).hexdigest() != EXPECT_SHA:
-            raise SystemExit('unexpected input firmware (addresses are for GR III 2.10 fwdc239b.bin only)')
+        expect = MODEL_SHA.get(model, EXPECT_SHA)
+        got = hashlib.sha256(self.candidate).hexdigest()
+        if got != expect:
+            raise SystemExit(
+                f'unexpected input firmware: model={model} expects {expect[:16]}..., got {got[:16]}...')
         info = inspect_container(self.candidate)
         self.original, _ = decode_payload(self.candidate[128:info['payload_end']], info['decoded_size'])
         rows = {r['name']: r for r in section_rows(self.original)}
         self.rtos0 = rows['RTOS']['start'] + 16
         self.rtos_end = rows['RTOS']['end']
         self.target = bytearray(self.original)
+        # GR IIIx 机型：加载地址重映射表（gr3_addr_map.gr3x_of 做地址 → GR IIIx 地址）
+        self._remap = None
+        if model in ('gr3x', 'gr3xhdf'):
+            import gr3_addr_map as _am
+            self._remap = _am
 
     def off(self, addr):
         if DDST <= addr < DDST + DLEN:
             addr = DSRC + addr - DDST
+        if self._remap is not None:
+            # GR IIIx：把 GR III 2.10 地址重定位到 GR IIIx 1.70
+            new = self._remap.gr3x_of(addr)
+            if new is None:
+                raise SystemExit(
+                    f'GR IIIx: address 0x{addr:08X} not yet relocated '
+                    f'(见 work/gr3x_addr_map.json，需先跑 relocate_gr3x.py 补全)')
+            addr = new
         o = self.rtos0 + addr - BASE
-        assert self.rtos0 <= o < self.rtos_end
+        assert self.rtos0 <= o < self.rtos_end, f'addr 0x{addr:08X} out of RTOS'
         return o
 
     def read(self, addr, n): o = self.off(addr); return bytes(self.target[o:o + n])

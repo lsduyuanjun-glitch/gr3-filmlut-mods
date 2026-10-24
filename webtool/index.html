@@ -842,8 +842,12 @@
         mn.textContent = ready ? '已检测到 GR III 官方固件 · 适用普通 GR III（无 HDF）' : '请放入 GR III 官方固件（fwdc239b.bin，普通 GR III / HDF 通用）';
       } else if (sel === 'gr3hdf') {
         mn.textContent = ready ? '已检测到 GR III HDF 官方固件 · 适用带 HDF 滤镜的机型' : '请放入 GR III 官方固件（fwdc239b.bin，普通 GR III / HDF 通用）';
+      } else if (sel === 'gr3x') {
+        mn.textContent = ready ? '已检测到 GR IIIx 1.70 官方固件 · 地址重定位中，暂未开放' : '请放入 GR IIIx 官方固件（fwdc243b.bin，1.70）';
+      } else if (sel === 'gr3xhdf') {
+        mn.textContent = ready ? '已检测到 GR IIIx HDF 1.70 官方固件 · 地址重定位中，暂未开放' : '请放入 GR IIIx 官方固件（fwdc243b.bin，1.70，与 GR IIIx 通用）';
       } else {
-        mn.textContent = ready ? `已检测到 ${sel} 官方固件` : '请放入对应机型的官方固件（GR IIIx 系列待开放）';
+        mn.textContent = ready ? `已检测到 ${sel} 官方固件` : '请放入对应机型的官方固件';
       }
     }
   }

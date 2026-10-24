@@ -132,7 +132,11 @@ def find_firmware(model_id='gr3'):
     import models  # 延迟导入，避免模块加载顺序问题
     expected = models.expected_sha(model_id) or OFFICIAL_FW_SHA
 
-    names = ('fwdc239b.bin', 'fwdc239b_GR3_2.10_official.bin', 'fwdc239b_GR3_2.10.bin')
+    # 各机型官方固件的候选文件名（GR IIIx 用 fwdc243b）
+    if model_id in ('gr3x', 'gr3xhdf'):
+        names = ('fwdc243b.bin', 'fwdc243b_GR3x_1.70_official.bin', 'fwdc243b_GR3x_1.70.bin')
+    else:
+        names = ('fwdc239b.bin', 'fwdc239b_GR3_2.10_official.bin', 'fwdc239b_GR3_2.10.bin')
 
     # 收集候选（保持调用方设定的优先级顺序）
     cands = []

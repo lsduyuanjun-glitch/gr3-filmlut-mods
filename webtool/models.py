@@ -62,12 +62,18 @@ MODELS: dict[str, ModelSpec] = {
         id="gr3x",
         display_name="Ricoh GR IIIx",
         family="GR IIIx",
-        official_firmware_sha256="",  # TODO(阶段2): 逆向后填入 GR IIIx 官方固件 SHA
-        official_firmware_version="",
+        official_firmware_sha256="aa8e3ae1349d94e83be381c20530e41d5e57b75c27ef24ba81c7b017d6c11592",
+        official_firmware_version="1.70",
         firmware_download="",
-        patch={},                     # TODO(阶段2): 填 GR IIIx 偏移（与 III 共用底层，需实测）
-        supported=False,
-        note="40mm 等效焦段；与 GR III 底层共用最多，优先逆向。",
+        patch={
+            "modules": ["make_slots15", "make_slots16", "gr3patch", "make_grain_native"],
+            "append_tone_base": 25,
+            "multiaxial": True,
+            "rawdev": True,
+            "icon_scheme": "ext",   # 图标 ID 用纯 0x2A0 扩展区（与普通 GR III 同方案，机型无关）
+        },
+        supported=False,             # 地址重定位尚未完成，保持闸门拦截，绝不出产错误固件
+        note="40mm 等效焦段；与 GR III 共用底层，地址按 fwdc243b 1.70 重定位中（待全链路 verify 后开放）。",
     ),
     "gr3hdf": ModelSpec(
         id="gr3hdf",
@@ -90,12 +96,18 @@ MODELS: dict[str, ModelSpec] = {
         id="gr3xhdf",
         display_name="Ricoh GR IIIx HDF",
         family="GR IIIx HDF",
-        official_firmware_sha256="",  # TODO(阶段2)
-        official_firmware_version="",
+        official_firmware_sha256="aa8e3ae1349d94e83be381c20530e41d5e57b75c27ef24ba81c7b017d6c11592",  # 与 GR IIIx 同一份 fwdc243b 1.70
+        official_firmware_version="1.70",
         firmware_download="",
-        patch={},
+        patch={
+            "modules": ["make_slots15", "make_slots16", "gr3patch", "make_grain_native"],
+            "append_tone_base": 25,
+            "multiaxial": True,
+            "rawdev": True,
+            "icon_scheme": "hdf",   # GR IIIx HDF：HDF 开关图标占位差异，图标方案沿用 hdf
+        },
         supported=False,
-        note="GR IIIx + HDF 叠加；最后做。",
+        note="GR IIIx + HDF 叠加；与 GR IIIx 共用 fwdc243b 1.70，仅图标方案不同。地址重定位完成后随 gr3x 一起开放。",
     ),
 }
 
