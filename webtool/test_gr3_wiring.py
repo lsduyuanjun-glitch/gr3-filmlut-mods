@@ -50,7 +50,7 @@ def main():
     results.append(_check("默认机型 = GR III", models.DEFAULT_MODEL == "gr3"))
     results.append(_check("GR III 已 supported", models.is_supported("gr3")))
     results.append(_check("GR IIIx 被闸门拦截", not models.is_supported("gr3x")))
-    results.append(_check("GR III HDF 被闸门拦截", not models.is_supported("gr3hdf")))
+    results.append(_check("GR III HDF 已 supported（v1.5.8 起实机验证机型）", models.is_supported("gr3hdf")))
     results.append(_check("GR IIIx HDF 被闸门拦截", not models.is_supported("gr3xhdf")))
 
     # —— 2. 权威 SHA 交叉校验（注册表 vs 打补丁引擎）——

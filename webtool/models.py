@@ -53,7 +53,7 @@ MODELS: dict[str, ModelSpec] = {
             "append_tone_base": 25,   # 胶片作为新增影像控制项，追加在 tone 25+ 槽位
             "multiaxial": True,       # 12 分区色相校正
             "rawdev": True,           # RAW 显影兼容
-            "icon_scheme": "gr3",     # 图标 ID 用上游验证过的 0x05-0x07+0x1D/0x2D/0x2E（无 HDF）
+            "icon_scheme": "ext",     # 图标 ID 用纯 0x2A0 扩展区（原生目录按机型注册，任何原生 ID 都不可依赖）
         },
         supported=True,
         note="已逆向验证：胶片追加 + 颗粒引擎 + 解锁码全家桶均跑通（v1.5.2）。普通 GR III（无 HDF）。",
@@ -84,7 +84,7 @@ MODELS: dict[str, ModelSpec] = {
             "icon_scheme": "hdf",   # 图标 ID 用 0x2A0 扩展区（0x05-0x07 是 HDF 开关图标会冲突）
         },
         supported=True,
-        note="与 GR III 同一份 2.10 固件；差异仅在菜单图标 ID 方案（HDF 有「HDF 开关」图标占 0x05-0x07）。",
+        note="与 GR III 同一份 2.10 固件；图标用已实机验证的混合方案（0x1D/0x2D/0x2E + 0x2A0 扩展区），保持不动。",
     ),
     "gr3xhdf": ModelSpec(
         id="gr3xhdf",

@@ -84,7 +84,7 @@ CUBE_DIR = paths.CUBE_DIR
 # ★ 版本号：启动时探测「占用端口的旧进程」是否同版本；不同版本（旧 App 还在跑）就自动
 #   kill 它再接管端口。否则用户解压新 App 双击，新进程会因端口被旧进程占用而「复用旧实例」，
 #   浏览器永远显示旧界面（用户反复遇到的「和之前没区别」）。
-APP_VERSION = '1.5.8'
+APP_VERSION = '1.5.9'
 
 
 def _open_browser():
@@ -553,7 +553,7 @@ class Handler(BaseHTTPRequestHandler):
 
         verify_py = os.path.join(RESOURCE, 'verify_slots16.py')
         old_argv, old_cwd = sys.argv, os.getcwd()
-        # 机型分家：让 verify 按机型选图标方案（普通 GR III 用 0x05-0x07，HDF 用 0x2A0 扩展区）
+        # 机型图标方案：让 verify 按机型选图标 ID（普通 GR III 用纯 0x2A0 扩展区，HDF 用已验证混合方案）
         old_model = os.environ.get('GR3_MODEL')
         os.environ['GR3_MODEL'] = model or 'gr3hdf'
         buf = io.StringIO()

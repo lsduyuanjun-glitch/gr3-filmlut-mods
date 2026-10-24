@@ -66,14 +66,19 @@ SID0 = 0x380                                # string ids of the film names
 # 720x360; the GR III shows 0x1E) and GR IIIx TELE / 71mm crop (0x2D, 0x2E). 0x05-0x07 are 40x40 and are redrawn in
 # place; 0x1D/0x2D/0x2E get 40x40 descriptors inside 0x1D's pixel area. Only for a GR III without HDF.
 #
-# ★ 机型分家（2026-10-24 修复普通 GR III 进影像控制菜单关机）：
-#   上游原作者这套 ICON_IDS 是「无 HDF 的普通 GR III」验证过的方案。此前"Duccio 本地改造"为了兼容
-#   GR III HDF，把前 3 个从 0x05-0x07 换成 0x2A0-0x2A2（新增扩展区），结果普通 GR III 进菜单时
-#   走到 0x2A0 扩展区 hook 跳错地址 → 相机保护性关机。故按机型拆成两套：
-#     - GR III（普通）：(0x05, 0x06, 0x07, 0x1D, 0x2D, 0x2E) —— 上游验证过，前三个原地重绘（无扩展区 hook）
-#     - GR III HDF：     (0x1D, 0x2D, 0x2E, 0x2A0, 0x2A1, 0x2A2) —— 0x05-0x07 在 HDF 是「HDF 开关」图标会冲突，故用扩展区
-ICON_IDS_GR3 = (0x05, 0x06, 0x07, 0x1D, 0x2D, 0x2E)   # 普通 GR III（无 HDF）：上游逆向验证
-ICON_IDS_HDF = (0x1D, 0x2D, 0x2E, 0x2A0, 0x2A1, 0x2A2)  # GR III HDF：跳过 0x05-0x07（HDF 开关图标）
+# ★ 真正的根因（2026-10-24 第二次修复，推翻「机型分家」假设）：
+#   原生图标 ID 的「图标目录」（CATALOG=0x550020FC）是运行时 RAM，按机型注册：
+#   0x05-0x07 是 HDF 开关图标（HDF 机型才注册），0x1D/0x2D/0x2E 是 GR IIIx 认证/裁切图标。
+#   构建时读的是镜像里的静态初值（看似可用），但普通 GR III 运行时这些 ID 的目录项
+#   可能为空 → 取图标宽高时空指针 → 看门狗断电（= 用户实测「进影像控制列表就关机」）。
+#   上游 §24b 的 0x05-0x07 方案作者自己标注 "not yet camera-tested"，从未上过真机；
+#   上游真机验证过的 v13（§24a）根本没有自定义图标。
+#   结论：只有 0x2A0+ 扩展区（ids >= 0x2A0 由我们自己的描述符表 + patch 过的 getter/draw
+#   服务，完全不查原生目录）是与机型无关、无运行时目录依赖的方案。HDF 真机上
+#   0x2A0-0x2A2 已验证可用。故普通 GR III 改用纯扩展区（0x2A0-0x2A5，6 个连续 ID，
+#   机制按 n_new 参数化）；GR III HDF 保持已实机验证的混合方案不动。
+ICON_IDS_GR3 = (0x2A0, 0x2A1, 0x2A2, 0x2A3, 0x2A4, 0x2A5)  # 普通 GR III：纯扩展区，零原生目录依赖
+ICON_IDS_HDF = (0x1D, 0x2D, 0x2E, 0x2A0, 0x2A1, 0x2A2)  # GR III HDF：保持实机验证过的方案
 ICON_IDS = ICON_IDS_HDF                       # 默认保持旧行为（GR III HDF），由 model 参数切换
 NEW_ICON0, ICON_BOUND = 0x2A0, 0x29E          # ids >= NEW_ICON0 served from a descriptor table
 ICON_G1_FAIL, ICON_G2_FAIL = 0x53209FC4, 0x53209FF8   # id getters (width / height): out-of-range path 'mov r0,#0'
@@ -223,8 +228,8 @@ def appended(films):
 
 
 def _icon_ids_for(model):
-    """按机型返回安全图标 ID 方案。普通 GR III（无 HDF）用上游验证过的 0x05-0x07+0x1D/0x2D/0x2E，
-    GR III HDF 用扩展区方案（0x05-0x07 在 HDF 是「HDF 开关」图标会冲突）。"""
+    """按机型返回图标 ID 方案。普通 GR III 用纯 0x2A0 扩展区（零原生目录依赖），
+    GR III HDF 用已实机验证的混合方案（0x1D/0x2D/0x2E + 0x2A0-0x2A2）。"""
     if model in ('gr3hdf', 'gr3xhdf', 'hdf'):
         return ICON_IDS_HDF
     return ICON_IDS_GR3
