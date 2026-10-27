@@ -57,7 +57,7 @@ jobs:
             # ditto 只支持单源；先打 .app，再用 Python zipfile 把教程追加进包根。
             # 不能用 macOS 自带 zip -g：它对中文文件名编码成非 UTF-8，校验读出的名字会乱码。
             ditto -c -k --keepParent "${{ matrix.out_dir }}" "../${{ matrix.artifact }}.zip"
-            python -c "import zipfile; z=zipfile.ZipFile('${{ matrix.artifact }}.zip','a',zipfile.ZIP_DEFLATED); z.write('../使用教程.md','使用教程.md'); z.close()"
+            python3 -c "import zipfile; z=zipfile.ZipFile('../${{ matrix.artifact }}.zip','a',zipfile.ZIP_DEFLATED); z.write('../使用教程.md','使用教程.md'); z.close()"
           fi
           echo "artifact=${{ matrix.artifact }}.zip" >> "$GITHUB_ENV"
 
