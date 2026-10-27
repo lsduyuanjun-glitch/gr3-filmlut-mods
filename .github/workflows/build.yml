@@ -54,7 +54,9 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then
             7z a -r "../${{ matrix.artifact }}.zip" "${{ matrix.out_dir }}" ../使用教程.md || powershell -Command "Compress-Archive -Path '${{ matrix.out_dir }}','../使用教程.md' -DestinationPath '../${{ matrix.artifact }}.zip' -Force"
           else
-            ditto -c -k --keepParent "${{ matrix.out_dir }}" ../使用教程.md "../${{ matrix.artifact }}.zip"
+            # ditto 只支持单源；先打 .app，再用 zip 把教程追加进包根
+            ditto -c -k --keepParent "${{ matrix.out_dir }}" "../${{ matrix.artifact }}.zip"
+            (cd .. && zip -g -q "${{ matrix.artifact }}.zip" 使用教程.md)
           fi
           echo "artifact=${{ matrix.artifact }}.zip" >> "$GITHUB_ENV"
 
