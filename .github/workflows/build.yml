@@ -49,11 +49,12 @@ jobs:
       - name: Package (zip)
         shell: bash
         run: |
+          # 把使用教程放进分发包，用户解压后第一眼就能看到（教程在仓库根，dist 在仓库根下）
           cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a -r "../${{ matrix.artifact }}.zip" "${{ matrix.out_dir }}" || powershell -Command "Compress-Archive -Path '${{ matrix.out_dir }}' -DestinationPath '../${{ matrix.artifact }}.zip' -Force"
+            7z a -r "../${{ matrix.artifact }}.zip" "${{ matrix.out_dir }}" ../使用教程.md || powershell -Command "Compress-Archive -Path '${{ matrix.out_dir }}','../使用教程.md' -DestinationPath '../${{ matrix.artifact }}.zip' -Force"
           else
-            ditto -c -k --keepParent "${{ matrix.out_dir }}" "../${{ matrix.artifact }}.zip"
+            ditto -c -k --keepParent "${{ matrix.out_dir }}" ../使用教程.md "../${{ matrix.artifact }}.zip"
           fi
           echo "artifact=${{ matrix.artifact }}.zip" >> "$GITHUB_ENV"
 
@@ -69,6 +70,7 @@ jobs:
           # 注意：models.py 等被 PyInstaller 编译进可执行体（不在 zip 里以 .py 形式出现），
           # 由 build/ 的 warn 日志确认其已被收集；此处只校验「以数据文件形式平铺进包」的文件。
           required_basenames = [
+              '使用教程.md',
               'index.html', 'make_slots15.py', 'make_slots16.py', 'make_grain_native.py',
               'make_grain.py', 'gr3patch.py', 'armasm.py', 'armmini.py', 'codec_path.py',
               'film_pipeline.py', 'gr3_tmp.py', 'build_firmware.py', 'paths.py', 'server.py',
