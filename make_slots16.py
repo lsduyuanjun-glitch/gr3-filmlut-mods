@@ -108,15 +108,24 @@ def make_src(sets, sets_len):
 
 
 def patch_ma(img, films):
-    """films as make_slots15.patch; fit dicts carry hue_q10. Returns info."""
+    """films as make_slots15.patch; fit dicts carry hue_q10. Returns info.
+
+    GR IIIx 适配（2026-10-27 修正 DSRC 基址后重新确认）：GR IIIx 1.70 的 MultiAxial 体系与
+    GR III 2.10 **同构**——所有 slot 统一指向 STOCK_SET（0x53DC2CD8，= GR III 0x53DC2BA0 + 0x138），
+    8-word set（bounds/blk/MATOBJ/TOBJ/control/YCC）+ 统一 STOCK_SET + 零表，结构完全相同。
+    之前「6-word MA record + 2160B 多轴区块」是 DSRC 基址错误导致读错数据的误判。
+    故 patch_ma 对 GR IIIx 只是地址平移（x() 重映射），不是结构重构。
+    """
+    x = _x_for(img)
     # free the stock 10-bit table: its object reads the same zeros from ZERO_SRC
     assert img.read(OLD_TAB, TAB_LEN) == bytes(TAB_LEN) and img.read(ZERO_SRC, TAB_LEN) == bytes(TAB_LEN)
-    assert struct.unpack('<8I', img.read(TOBJ, 32)) == (OLD_TAB,) * 8
-    img.write(TOBJ, struct.pack('<8I', *[ZERO_SRC] * 8))
-    sp = Space([(OLD_TAB, OLD_TAB + TAB_LEN)])
-    alloc = lambda data, name: (lambda at: (img.write(at, data), at)[1])(sp.take(len(data), name))
+    assert struct.unpack('<8I', img.read(TOBJ, 32)) == (x(OLD_TAB),) * 8
+    img.write(TOBJ, struct.pack('<8I', *[x(ZERO_SRC)] * 8))
+    # Space 分配在 x(OLD_TAB) 起的零表区；分配出的地址是目标固件原生地址，用 raw_write 写入
+    sp = Space([(x(OLD_TAB), x(OLD_TAB) + TAB_LEN)])
+    alloc = lambda data, name: (lambda at: (img.raw_write(at, data), at)[1])(sp.take(len(data), name))
     # shared GR IV set fields (stock layout: selectors, control directly behind)
-    stock_block = bytearray(img.read(0x53DC2BB8, 0x48))
+    stock_block = bytearray(img.raw_read(x(0x53DC2BB8), 0x48))
     blk = bytearray(stock_block)
     blk[:20] = bytes(G4['selectors'])
     blk[20:62] = struct.pack('<21H', *G4['control'])
@@ -130,12 +139,12 @@ def patch_ma(img, films):
     for k, (key, label, fit, repl) in enumerate(films):
         flag = 1 if fit.get('hue_gr4_levels') else 0
         s = sets + 28 * k
-        img.write(s, struct.pack('<7I', bounds, blk_at, MATOBJ, TOBJ, blk_at + 20, YCC, data_at[key] | flag))
+        img.raw_write(s, struct.pack('<7I', bounds, blk_at, x(MATOBJ), x(TOBJ), blk_at + 20, x(YCC), data_at[key] | flag))
         slot = LEGACY_SLOTS[k]
-        assert img.word(MA_TABLE + 4 * slot) == STOCK_SET, (key, slot)
+        assert img.word(MA_TABLE + 4 * slot) == x(STOCK_SET), (key, slot)
         img.write(MA_TABLE + 4 * slot, struct.pack('<I', s))
     at = code(sp, img, 'MA make', make_src(sets, 28 * n))
-    put(img, MAKE, B(MAKE, at), 0xE1A0C00D)
+    put(img, x(MAKE), B(x(MAKE), at), 0xE1A0C00D)
     return dict(sets=hex(sets), make=hex(at), data={k: hex(v) for k, v in data_at.items()},
                 space=[(nm, hex(a), sz) for nm, a, sz in sp.used], free_left=[(hex(a), b - a) for a, b in sp.free])
 
@@ -159,9 +168,30 @@ def mov_imm(word):
     return word & 0xFF
 
 
+def _x_for(img):
+    """返回 model 感知的 x(addr)：GR IIIx 下把硬编码 GR III 地址重定位到目标固件应写的地址值，GR III 下恒等。
+
+    语义（务必分清，否则双重偏移）：
+      - RAM 地址（0x55xxxxxx）→ RAM 运行地址 +0x08（写入 set 结构体指针 / movw-movt 立即数的值）
+      - 代码区地址（0x53xxxxxx）→ 区间表重定位（写入跳转目标 / put 位置的值）
+    返回的是目标固件原生地址，调用方须用 raw_* 访问（raw_off 不再 gr3x_of）。
+    """
+    if img.model in ('gr3x', 'gr3xhdf'):
+        import gr3_addr_map as _am
+        def x(a):
+            if 0x55000000 <= a < 0x5503A080:
+                return a + 0x08
+            r = _am.gr3x_of(a)
+            assert r is not None, f'GR IIIx: address 0x{a:08X} not yet relocated'
+            return r
+        return x
+    return lambda a: a
+
+
 def jump_table(img, at, n):
     """`cmp rX,#n-1; ldrls pc,[pc,rX,lsl #2]; b default` at `at`: case -> mov r0,#imm result."""
-    return [mov_imm(img.word(img.word(at + 12 + 4 * i))) for i in range(n)]
+    # `at` 是硬编码代码地址；读出的跳转表指针是目标固件地址，用 raw_word 避免双重偏移
+    return [mov_imm(img.raw_word(img.word(at + 12 + 4 * i))) for i in range(n)]
 
 
 def patch_rawdev(img, films, info15):
@@ -169,6 +199,7 @@ def patch_rawdev(img, films, info15):
     proxy_tab = used['proxy table']
     t0, n = M15.FIRST_TONE, len(films)
     sp = M15.FALLBACK[0]
+    x = _x_for(img)
     # stock tables: tone 11..22 -> enum (ConvertToRD), enum 1..12 -> tone (RD -> tone)
     assert img.word(RD_CONV) == 0xE241100B and img.word(RD_CONV + 0x14) == 0xE351000B
     to_enum = dict(zip(range(11, 23), jump_table(img, RD_CONV + 0x14, 12)))
@@ -183,7 +214,7 @@ def patch_rawdev(img, films, info15):
             at = enum_tone_at[e]
             put(img, at, 0xE3A00000 | (t0 + len(enums) - 1), 0xE3A00000 | repl)   # enum e -> the replacing film
     tab = sp.take(n, 'RAW dev film enums')
-    img.write(tab, bytes(enums))
+    img.raw_write(tab, bytes(enums))
     conv = code(sp, img, 'RAW dev tone->enum', lambda at: f'''
         sub ip, r1, #{t0}
         cmp ip, #{n}
@@ -193,8 +224,8 @@ def patch_rawdev(img, films, info15):
         ldrb r0, [r0, ip]
         bx lr
     S:  sub r1, r1, #0xb
-        b abs({RD_CONV + 4:#x})''')
-    put(img, RD_CONV, B(RD_CONV, conv), 0xE241100B)
+        b abs({x(RD_CONV + 4):#x})''')
+    put(img, x(RD_CONV), B(x(RD_CONV), conv), 0xE241100B)
     m = nxt - 13                                   # appended films: enums 13..13+m-1 -> tones t0..t0+m-1
     first_app = [k for k, f in enumerate(films) if f[3] is None]
     assert first_app == list(range(m))
@@ -202,41 +233,41 @@ def patch_rawdev(img, films, info15):
         sub r0, r1, #13
         cmp r0, #{m}
         addlo r0, r0, #{t0}
-        blo abs({RD_TONE + 0x54:#x})
-        b abs({RD_TONE + 0xC0:#x})''')
+        blo abs({x(RD_TONE + 0x54):#x})
+        b abs({x(RD_TONE + 0xC0):#x})''')
     assert img.word(RD_TONE + 0x54) == 0xE24BD00C                       # sub sp, fp, #0xc (common return)
-    assert img.word(RD_TONE_DEF) == B(RD_TONE_DEF, RD_TONE + 0xC0)       # b default (assertion)
-    put(img, RD_TONE_DEF, B(RD_TONE_DEF, back), img.word(RD_TONE_DEF))
+    assert img.word(RD_TONE_DEF) == B(x(RD_TONE_DEF), x(RD_TONE + 0xC0))  # b default (assertion)
+    put(img, x(RD_TONE_DEF), B(x(RD_TONE_DEF), back), img.word(RD_TONE_DEF))
     # RAW-dev parameter screen Image Control options: append the new enums 13..12+m before the two develop settings
     assert bytes(img.read(RD_OPT_ENUMS, 12)) == bytes(range(1, 13))
     assert bytes(img.read(RD_OPT_SLOTS, 16)) == bytes(13) + bytes([1, 2, 0])
     et = sp.take(12 + m, 'RAW dev option enums')
-    img.write(et, bytes(range(1, 13 + m)))
+    img.raw_write(et, bytes(range(1, 13 + m)))
     st = sp.take(16 + m, 'RAW dev option slots')
-    img.write(st, bytes(13 + m) + bytes([1, 2, 0]))
+    img.raw_write(st, bytes(13 + m) + bytes([1, 2, 0]))
     for at, old, new in ((0x532834D8, RD_OPT_SLOTS, st), (0x532834F4, RD_OPT_SLOTS, st), (0x532835C8, RD_OPT_ENUMS, et),
                          (0x532835DC, RD_OPT_ENUMS, et)):
-        put(img, at, M15.movw(3, new), M15.movw(3, old))
+        put(img, x(at), M15.movw(3, new), M15.movw(3, x(old)))
     for at, old, new in ((0x532834DC, RD_OPT_SLOTS, st), (0x53283510, RD_OPT_SLOTS, st), (0x53283564, RD_OPT_SLOTS, st),
                          (0x532835CC, RD_OPT_ENUMS, et), (0x532835E4, RD_OPT_ENUMS, et)):
-        put(img, at, M15.movt(3, new), M15.movt(3, old))
-    put(img, RD_OPT_COUNT + 8, 0x13A00000 | (15 + m), 0x13A0000F)      # movne r0,#15 (with as shot)
-    put(img, RD_OPT_COUNT + 12, 0x03A00000 | (14 + m), 0x03A0000E)     # moveq r0,#14
-    put(img, RD_OPT_MAX, 0xE3A00000 | (15 + m), 0xE3A0000F)            # list item capacity
+        put(img, x(at), M15.movt(3, new), M15.movt(3, x(old)))
+    put(img, x(RD_OPT_COUNT + 8), 0x13A00000 | (15 + m), 0x13A0000F)   # movne r0,#15 (with as shot)
+    put(img, x(RD_OPT_COUNT + 12), 0x03A00000 | (14 + m), 0x03A0000E)  # moveq r0,#14
+    put(img, x(RD_OPT_MAX), 0xE3A00000 | (15 + m), 0xE3A0000F)         # list item capacity
     # the RAW-dev Image Control list (RawDevelopmentImageControlDetailSetController 0x53190108) takes its length from
     # this hard-wired 12, not from ImageControlModel's count; rows map through the patched index -> tone table
     assert img.word(RD_COUNT + 4) == 0xE12FFF1E
-    put(img, RD_COUNT, 0xE3A00000 | (12 + m), 0xE3A0000C)
+    put(img, x(RD_COUNT), 0xE3A00000 | (12 + m), 0xE3A0000C)
     kind = code(sp, img, 'RAW dev detail kind', lambda at: f'''
         sub ip, r1, #{t0}
         cmp ip, #{n}
         subhs r1, r1, #0xb
-        bhs abs({RD_KIND + 4:#x})
+        bhs abs({x(RD_KIND + 4):#x})
         movw ip, #{(proxy_tab - t0) & 0xFFFF:#x}
         movt ip, #{(proxy_tab - t0) >> 16:#x}
         ldrb r1, [ip, r1]
-        b abs({RD_KIND + 4:#x})''')
-    put(img, RD_KIND, B(RD_KIND, kind), 0xE241100B)
+        b abs({x(RD_KIND + 4):#x})''')
+    put(img, x(RD_KIND), B(x(RD_KIND), kind), 0xE241100B)
     # shooting: the `sub r4,r4,#0xb` at 0x531ACB00 sits between a compare and its conditional use, so the film
     # mapping goes on the later `cmp r4,#0xb` (r4 = tone - 11 there; flags are set by the stub's own compare)
     sh = code(sp, img, 'shooting detail kind', lambda at: f'''
@@ -248,36 +279,37 @@ def patch_rawdev(img, films, info15):
         ldrb r4, [ip, r4]
     C:  cmp r4, #0xb
         bx lr''')
-    put(img, SH_KIND, M15.BL(SH_KIND, sh), 0xE354000B)
+    put(img, x(SH_KIND), M15.BL(x(SH_KIND), sh), 0xE354000B)
     return dict(enums={f[0]: e for f, e in zip(films, enums)}, conv=hex(conv), back=hex(back), kind=hex(kind))
 
 
 def patch_exif_tone(img, films):
     t0, n = M15.FIRST_TONE, len(films)
     sp = M15.FALLBACK[0]
+    x = _x_for(img)
     pairs = bytes(img.read(EXIF_PAIRS, 48))
     assert [struct.unpack_from('<BBH', pairs, 4 * i) for i in range(12)] == [(11 + i, 0, 0x100 + i) for i in range(12)]
     new = pairs + b''.join(struct.pack('<BBH', t0 + k, 0, EXIF_CODE0 + k) for k in range(n))
     tab = sp.take(len(new), 'ImageTone pairs')
-    img.write(tab, new)
-    c = EXIF_CTOR
+    img.raw_write(tab, new)
+    c = x(EXIF_CTOR)
     sz = 4 * (12 + n)
     assert sz < 256
     put(img, c - 4, 0xE3A00000 | sz, 0xE3A00030)                      # mov r0,#0x30 (new size)
-    put(img, c + 0x28, M15.movw(12, tab), M15.movw(12, EXIF_PAIRS))
-    put(img, c + 0x34, M15.movt(12, tab), M15.movt(12, EXIF_PAIRS))
+    put(img, c + 0x28, M15.movw(12, tab), M15.movw(12, x(EXIF_PAIRS)))
+    put(img, c + 0x34, M15.movt(12, tab), M15.movt(12, x(EXIF_PAIRS)))
     put(img, c + 0x38, 0xE2801000 | sz, 0xE2801030)                   # add r1,r0,#0x30 (capacity end)
     put(img, c + 0x54, 0xE3530000 | (12 + n), 0xE353000C)             # cmp r3,#0xc (copy count)
     put(img, c + 0x68, 0xE2800000 | sz, 0xE2800030)                   # add r0,r0,#0x30 (end)
     rd_tab = bytes(img.read(EXIF_READ_TAB, 11))
     assert list(rd_tab) == list(range(12, 23))
     rtab = sp.take(11 + n, 'ImageTone read table')
-    img.write(rtab, rd_tab + bytes(range(t0, t0 + n)))
-    r = EXIF_READ
+    img.raw_write(rtab, rd_tab + bytes(range(t0, t0 + n)))
+    r = x(EXIF_READ)
     put(img, r, 0xE3500000 | (10 + n), 0xE350000A)                     # cmp r0,#0xa
     ls = lambda wd: (wd & 0x0FFFFFFF) | 0x90000000                       # condition LS
-    put(img, r + 4, ls(M15.movw(3, rtab)), ls(M15.movw(3, EXIF_READ_TAB)))   # movwls r3, table
-    put(img, r + 0xC, ls(M15.movt(3, rtab)), ls(M15.movt(3, EXIF_READ_TAB)))
+    put(img, r + 4, ls(M15.movw(3, rtab)), ls(M15.movw(3, x(EXIF_READ_TAB))))   # movwls r3, table
+    put(img, r + 0xC, ls(M15.movt(3, rtab)), ls(M15.movt(3, x(EXIF_READ_TAB))))
     return dict(pairs=hex(tab), read_table=hex(rtab), codes={films[k][0]: EXIF_CODE0 + k for k in range(n)})
 
 

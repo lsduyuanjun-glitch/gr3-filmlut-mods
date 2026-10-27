@@ -170,14 +170,14 @@ def code(space, img, name, src_fn, prefer=None):
     at = space.take(4 * n, name, prefer if space is primary else None)
     words = assemble(src_fn(at), at)
     assert len(words) == n
-    img.write(at, struct.pack(f'<{n}I', *words))
+    img.raw_write(at, struct.pack(f'<{n}I', *words))
     return at
 
 
 def put(img, at, word, expect):
-    got = img.word(at)
+    got = img.raw_word(at)
     assert got == expect, f'{at:#x}: {got:#010x} != {expect:#010x}'
-    img.write(at, struct.pack('<I', word))
+    img.raw_write(at, struct.pack('<I', word))
 
 
 def expand_multi_src(ranges):
@@ -229,8 +229,11 @@ def appended(films):
 
 def _icon_ids_for(model):
     """按机型返回图标 ID 方案。普通 GR III 用纯 0x2A0 扩展区（零原生目录依赖），
-    GR III HDF 用已实机验证的混合方案（0x1D/0x2D/0x2E + 0x2A0-0x2A2）。"""
-    if model in ('gr3hdf', 'gr3xhdf', 'hdf'):
+    GR III HDF 用已实机验证的混合方案（0x1D/0x2D/0x2E + 0x2A0-0x2A2）。
+    GR IIIx / GR IIIx HDF：虽经逆向确认 GR IIIx 图标目录与 GR III 结构一致，但
+    0x1D/0x2D/0x2E 等原生 ID 在 GR IIIx 上是否安全 carve 尚未实机验证，
+    故一律用纯 0x2A0 扩展区（最保守、零原生目录依赖）。"""
+    if model in ('gr3hdf', 'hdf'):
         return ICON_IDS_HDF
     return ICON_IDS_GR3
 
@@ -257,7 +260,30 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
             f'胶片数量 {n} 超出当前图标区上限 {len(icon_ids)} 个。'
             f'机内菜单每个胶片需要一个安全图标 ID，目前只逆向出 {len(icon_ids)} 个；'
             f'请先删减到 {len(icon_ids)} 个以内，或等待后续版本扩充图标区。')
-    space = Space(REGIONS)
+    is_gr3x = model in ('gr3x', 'gr3xhdf')
+    # x(addr)：把 GR III 2.10 硬编码地址转成目标固件地址（GR IIIx 下做 gr3x_of，GR III 下恒等）。
+    # 所有「硬编码 GR III 地址常量」（代码跳转目标 / put 写入位置 / movw-movt 立即数）都经 x() 重映射；
+    # 「读出的指针」和「Space 分配的地址」已是目标固件地址，直接用 raw 访问。
+    if is_gr3x:
+        import gr3_addr_map as _am
+        _remap = _am.gr3x_of
+        def x(a):
+            # 把「硬编码 GR III 地址常量」转成「目标固件里应写的地址值」：
+            #   - RAM 地址（0x55xxxxxx）→ RAM 运行地址 +0x08（写入 set 指针 / movw-movt 立即数的值）
+            #   - 代码区 / ROM 地址（0x53xxxxxx）→ 区间表重定位（写入跳转目标 / put 位置的值）
+            # 返回的地址是目标固件原生地址，后续要用 raw 访问（raw_off 不再 gr3x_of），
+            # 避免与 off() 的 gr3x_of 双重偏移。
+            if 0x55000000 <= a < 0x5503A080:
+                return a + 0x08
+            r = _remap(a)
+            assert r is not None, f'GR IIIx: address 0x{a:08X} not yet relocated'
+            return r
+        # 代码区 REGIONS（GR III 地址）也转成 GR IIIx 地址，space.take() 返回的地址即最终固件实际地址
+        space = Space([(_remap(lo), _remap(hi)) for lo, hi in REGIONS])
+    else:
+        def x(a):
+            return a
+        space = Space(REGIONS)
     lib = [img.word(CURVE_LIB + 4 * i) for i in range(12)]
     regions = merged_regions([lib[i] for i in CURVE_SLOTS_FREE])
     assert [hi - lo for lo, hi in regions] == [1536, 512, 4096], regions
@@ -266,24 +292,31 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
     info = {}
 
     # --- film data: records, matrices, knots, CSP table --------------------------------------------------------
+    # GR IIIx 的 look record 结构体与 GR III 逐字段对齐（2026-10-27 修正 DSRC 后重新验证）：
+    # matrix 指针仍在 record 对象 +0x04（指针值 +0x138），无 +0x100 平移。
+    # 之前「record +0x100 平移」是 DSRC 基址错误导致的误判。
+    rec_off = 0x0                                # record 结构体在 record 对象内的偏移（GR III / GR IIIx 一致）
+    mat_off = 0x4                                # matrix 指针字段在 record 对象内的偏移（GR III / GR IIIx 一致）
+    # 读出/写回 record 结构体：rec 是「从固件读出的指针」（已是目标固件地址），必须用 raw 访问，
+    # 否则 off() 会再套一次 gr3x_of 导致双重偏移。SHARED_REC 是硬编码地址，仍走 off()。
     shared = bytes(img.read(SHARED_REC, REC_LEN))
     slots, knot_ptrs, posts, knot_ranges = [], [], {}, []
     for k, (key, label, fit, repl) in enumerate(films):
         slot = LEGACY_SLOTS[k]
         rec = img.word(RECORDS + 4 * slot)
-        mat = img.word(rec + 4) if slot not in NEW_MAT_SLOTS else kspace.take(18, f'matrix {key}')
+        mat = img.raw_word(rec + mat_off) if slot not in NEW_MAT_SLOTS else kspace.take(18, f'matrix {key}')
         data = bytearray(shared)
         data[4:8] = struct.pack('<I', mat)
-        img.write(rec, bytes(data))
+        img.raw_write(rec + rec_off, bytes(data))
         q = q13_matrix(fit['matrix'])
-        img.write(mat, struct.pack('<9h', *q.ravel().tolist()))
+        img.raw_write(mat, struct.pack('<9h', *q.ravel().tolist()))
         cv = fit['presets'][0]['curves']
         if key in FULL_CURVES:
             ptrs = []
             for c, ch in zip(cv, 'RGB'):
                 at = kspace.take(512, f'curve {key} {ch}', prefer=[2])
                 assert regions[2][0] <= at < regions[2][1]
-                img.write(at, struct.pack('<256H', *[int(round(v)) for v in c]))
+                img.raw_write(at, struct.pack('<256H', *[int(round(v)) for v in c]))
                 ptrs.append(at)
             err = max(int(abs(np.round(c) - np.asarray(c)).max()) for c in cv)
             at = ptrs[0]
@@ -292,7 +325,7 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
             err = max(int(abs(expand(x) - np.asarray(c)).max()) for x, c in zip(kn, cv))
             at = kspace.take(KNOT_BYTES, f'knots {key}', prefer=[0])
             assert regions[0][0] <= at < regions[0][1]
-            img.write(at, struct.pack(f'<{3 * N_KNOTS}H', *np.ravel(kn).tolist()))
+            img.raw_write(at, struct.pack(f'<{3 * N_KNOTS}H', *np.ravel(kn).tolist()))
             ptrs = [at + 2 * N_KNOTS * c for c in range(3)]
         knot_ptrs += ptrs
         P = fit.get('post_q512', fit.get('cca1_q512'))
@@ -310,7 +343,7 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
         """Curve area first, then the code areas."""
         sp = kspace if any(hi - lo >= len(blob) for lo, hi in kspace.free) else space
         at = sp.take(len(blob), name)
-        img.write(at, blob)
+        img.raw_write(at, blob)
         return at
 
     # names: entries {u8 chars incl. NUL, u8 1, u16 0, u32 -> UTF-16LE}
@@ -349,7 +382,7 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
         movhs r2, #{PROXY}
         cmp r2, #0xb
         bx lr''')
-    lib6 = CURVE_LIB + 24
+    lib6 = x(CURVE_LIB + 24)
     fill_at = code(space, img, 'curve fill', lambda at: f'''
         movw r0, #{lib6 & 0xFFFF:#x}
         movt r0, #{lib6 >> 16:#x}
@@ -359,7 +392,7 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
         stm r0, {{r4, r5, r8, r9, r10, r12}}
         sub r2, r1, #{t0}
         cmp r2, #{n}
-        bhs abs({NO_CURVES:#x})
+        bhs abs({x(NO_CURVES):#x})
         add r2, r2, r2, lsl #1
         movw r4, #{ptr_table & 0xFFFF:#x}
         movt r4, #{ptr_table >> 16:#x}
@@ -392,7 +425,7 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
         addlo r0, ip, #{SID0:#x}
         bxlo lr
         cmp r1, #0xa
-        b abs({NAME_FN + 4:#x})''')
+        b abs({x(NAME_FN + 4):#x})''')
     icon_tab = data(struct.pack(f'<{n}H', *icon_ids[:n]), 'icon id table')
     n_new = sum(1 for i in icon_ids[:n] if i >= NEW_ICON0)
     desc_tab = data(bytes(8 * max(n_new, 1)), 'icon descriptors (new ids)')
@@ -408,21 +441,21 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
         add r0, ip, r0, lsl #3
         ldrh r0, [r0, #{field}]
         bx lr''')
-            put(img, fail, B(fail, g_at), 0xE3A00000)
+            put(img, x(fail), B(x(fail), g_at), 0xE3A00000)
         d0 = desc_tab - 8 * NEW_ICON0
         draw_at = code(space, img, 'icon draw lookup', lambda at: f'''
         cmp r3, #{NEW_ICON0:#x}
         ldrlo r3, [r2, r3, lsl #2]
         bhs N
         cmp lr, #0
-        b abs({ICON_DRAW_RET:#x})
+        b abs({x(ICON_DRAW_RET):#x})
     N:  movw ip, #{d0 & 0xFFFF:#x}
         movt ip, #{d0 >> 16:#x}
         add r3, ip, r3, lsl #3
         cmp lr, #0
-        b abs({ICON_DRAW_RET:#x})''')
-        put(img, ICON_DRAW_AT, B(ICON_DRAW_AT, draw_at), 0xE35E0000)          # cmp lr,#0 (catalog load follows)
-        put(img, ICON_DRAW_BOUND, movw(1, NEW_ICON0 + n_new - 1), movw(1, ICON_BOUND))
+        b abs({x(ICON_DRAW_RET):#x})''')
+        put(img, x(ICON_DRAW_AT), B(x(ICON_DRAW_AT), draw_at), 0xE35E0000)          # cmp lr,#0 (catalog load follows)
+        put(img, x(ICON_DRAW_BOUND), movw(1, NEW_ICON0 + n_new - 1), movw(1, ICON_BOUND))
     icon_at = code(space, img, 'icon', lambda at: f'''
         sub ip, r1, #{t0}
         cmp ip, #{n}
@@ -433,34 +466,34 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
         ldrh r0, [ip]
         bx lr
     F:  cmp r1, #0xa
-        b abs({ICON_FN + 4:#x})''')
+        b abs({x(ICON_FN + 4):#x})''')
     disp_at = code(space, img, 'display code', lambda at: f'''
         sub ip, r3, #{t0}
         cmp ip, #{n}
         movlo r0, r3
-        blo abs({DISP_RET:#x})
-        b abs({DISP_FAIL:#x})''')
+        blo abs({x(DISP_RET):#x})
+        b abs({x(DISP_FAIL):#x})''')
     mdisp_at = code(space, img, 'movie display code', lambda at: f'''
         sub ip, r3, #{t0}
         cmp ip, #{n}
         movlo r0, r3
-        blo abs({MDISP_RET:#x})
-        b abs({MDISP_FAIL:#x})''')
+        blo abs({x(MDISP_RET):#x})
+        b abs({x(MDISP_FAIL):#x})''')
     dstr_at = code(space, img, 'display string', lambda at: f'''
         sub ip, r1, #{t0}
         cmp ip, #{n}
         addlo r0, ip, #{SID0:#x}
-        blo abs({DSTR_RET:#x})
-        b abs({DSTR_FAIL:#x})''')
+        blo abs({x(DSTR_RET):#x})
+        b abs({x(DSTR_FAIL):#x})''')
     dicon_at = code(space, img, 'display icon', lambda at: f'''
         sub ip, r1, #{t0}
         cmp ip, #{n}
-        bhs abs({DICON_FAIL:#x})
+        bhs abs({x(DICON_FAIL):#x})
         movw r0, #{icon_tab & 0xFFFF:#x}
         movt r0, #{icon_tab >> 16:#x}
         add ip, r0, ip, lsl #1
         ldrh r0, [ip]
-        b abs({DICON_RET:#x})''')
+        b abs({x(DICON_RET):#x})''')
 
     def strfix(rd):
         return lambda at: f'''
@@ -478,27 +511,27 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
     str2_at = code(space, img, 'string getter 2', strfix(3))
 
     # --- hooks -------------------------------------------------------------------------------------------------
-    put(img, RANDOM, B(RANDOM, PRESET), 0xEDDF0BE0)                       # random case -> fixed-preset case
-    put(img, SLOT_AT, BL(SLOT_AT, slot_at), 0xE3520016)
-    put(img, SLOT_AT + 4, NOP, 0x11A01002)
-    put(img, SLOT_AT + 8, NOP, 0x03A01019)
-    put(img, PARAM_AT, BL(PARAM_AT, param_at), 0xE352000B)
-    put(img, FILL_LDR, 0xE59632D0, 0x159632D0)                           # ldrne -> ldr r3,[r6,#0x2d0]
-    put(img, FILL_AT, B(FILL_AT, fill_at), B(FILL_AT, CHAIN, 0x0))
-    put(img, CSP_CALL, BL(CSP_CALL, csp_at), BL(CSP_CALL, CSP_CALC))
-    put(img, GET_CALL, BL(GET_CALL, get_at), BL(GET_CALL, GETTER))
+    put(img, x(RANDOM), B(x(RANDOM), x(PRESET)), 0xEDDF0BE0)              # random case -> fixed-preset case
+    put(img, x(SLOT_AT), BL(x(SLOT_AT), slot_at), 0xE3520016)
+    put(img, x(SLOT_AT) + 4, NOP, 0x11A01002)
+    put(img, x(SLOT_AT) + 8, NOP, 0x03A01019)
+    put(img, x(PARAM_AT), BL(x(PARAM_AT), param_at), 0xE352000B)
+    put(img, x(FILL_LDR), 0xE59632D0, 0x159632D0)                         # ldrne -> ldr r3,[r6,#0x2d0]
+    put(img, x(FILL_AT), B(x(FILL_AT), fill_at), B(x(FILL_AT), x(CHAIN), 0x0))
+    put(img, x(CSP_CALL), BL(x(CSP_CALL), csp_at), BL(x(CSP_CALL), x(CSP_CALC)))
+    put(img, x(GET_CALL), BL(x(GET_CALL), get_at), BL(x(GET_CALL), x(GETTER)))
     # list
-    put(img, COUNT_AT, 0x93A00000 | (12 + m), 0x93A0000C)
+    put(img, x(COUNT_AT), 0x93A00000 | (12 + m), 0x93A0000C)
     for lo_at, hi_at, old in IDX2TONE_PAIRS + TONE2IDX_PAIRS:
-        put(img, lo_at, movw(3, idx_table), movw(3, old))
-        put(img, hi_at, movt(3, idx_table), movt(3, old))
+        put(img, x(lo_at), movw(3, idx_table), movw(3, x(old)))
+        put(img, x(hi_at), movt(3, idx_table), movt(3, x(old)))
     for at in TONE2IDX_CMP:
-        put(img, at, 0xE3500000 | (12 + m), 0xE350000C)
+        put(img, x(at), 0xE3500000 | (12 + m), 0xE350000C)
     # names / icons / display codes
-    put(img, NAME_FN, B(NAME_FN, name_at), 0xE351000A)
-    put(img, ICON_FN, B(ICON_FN, icon_at), 0xE351000A)
-    put(img, DISP_DEFAULT, B(DISP_DEFAULT, disp_at), B(DISP_DEFAULT, DISP_FAIL))
-    put(img, MDISP_DEFAULT, B(MDISP_DEFAULT, mdisp_at), B(MDISP_DEFAULT, MDISP_FAIL))
+    put(img, x(NAME_FN), B(x(NAME_FN), name_at), 0xE351000A)
+    put(img, x(ICON_FN), B(x(ICON_FN), icon_at), 0xE351000A)
+    put(img, x(DISP_DEFAULT), B(x(DISP_DEFAULT), disp_at), B(x(DISP_DEFAULT), x(DISP_FAIL)))
+    put(img, x(MDISP_DEFAULT), B(x(MDISP_DEFAULT), mdisp_at), B(x(MDISP_DEFAULT), x(MDISP_FAIL)))
     # movie list: replaced stock tones -> their films, in place (count stays 10)
     for tab in MOVIE_TABLES:
         mt = bytearray(img.read(tab, 10))
@@ -507,23 +540,23 @@ def patch(img, films, raw_nr_above=None, model='gr3hdf'):
                 assert mt.count(f[3]) == 1, (hex(tab), f[3])
                 mt[mt.index(f[3])] = FIRST_TONE + k
         img.write(tab, bytes(mt))
-    put(img, DSTR_DEFAULT, B(DSTR_DEFAULT, dstr_at), B(DSTR_DEFAULT, DSTR_FAIL))
-    put(img, DICON_DEFAULT, B(DICON_DEFAULT, dicon_at), B(DICON_DEFAULT, DICON_FAIL))
-    put(img, STR1_BOUND, movw(3, SID_MAX), movw(3, 0x311))
-    put(img, STR1_LOAD, BL(STR1_LOAD, str1_at), 0xE7937107)
-    put(img, STR2_BOUND, movw(3, SID_MAX), movw(3, 0x311))
-    put(img, STR2_LOAD, BL(STR2_LOAD, str2_at), 0xE7933107)
+    put(img, x(DSTR_DEFAULT), B(x(DSTR_DEFAULT), dstr_at), B(x(DSTR_DEFAULT), x(DSTR_FAIL)))
+    put(img, x(DICON_DEFAULT), B(x(DICON_DEFAULT), dicon_at), B(x(DICON_DEFAULT), x(DICON_FAIL)))
+    put(img, x(STR1_BOUND), movw(3, SID_MAX), movw(3, 0x311))
+    put(img, x(STR1_LOAD), BL(x(STR1_LOAD), str1_at), 0xE7937107)
+    put(img, x(STR2_BOUND), movw(3, SID_MAX), movw(3, 0x311))
+    put(img, x(STR2_LOAD), BL(x(STR2_LOAD), str2_at), 0xE7933107)
     # adjustments: tone switches
     n_sw = 0
     for f in PROXY_FUNCS:
-        e = f + 4
-        while img.word(e) != 0xE1A0C00D:
+        e = x(f) + 4
+        while img.raw_word(e) != 0xE1A0C00D:
             e += 4
-        for at in range(f, e, 4):
-            wd = img.word(at)
+        for at in range(x(f), e, 4):
+            wd = img.raw_word(at)
             r = (wd >> 12) & 15
-            if (wd & 0xFFF00FFF) == 0xE240000B and (wd >> 16) & 15 == r and img.word(at + 4) == (0xE350000B | r << 16) \
-                    and (img.word(at + 8) & 0xFFFFF000) == 0x979FF000:
+            if (wd & 0xFFF00FFF) == 0xE240000B and (wd >> 16) & 15 == r and img.raw_word(at + 4) == (0xE350000B | r << 16) \
+                    and (img.raw_word(at + 8) & 0xFFFFF000) == 0x979FF000:
                 assert r in stubs, hex(at)
                 put(img, at, BL(at, stubs[r]), wd)
                 n_sw += 1
@@ -550,9 +583,14 @@ def patch_film_icons(img, keys, desc_tab, icon_ids=None):
     if icon_ids is None:
         icon_ids = ICON_IDS
     from make_icons import descriptor, get_icon, render, iconbin, CATALOG
-    frame = get_icon(img, FRAME_ICON)
+    # 图标目录（CATALOG）在 GR IIIx 里与 GR III 完全一致（2026-10-27 修正 DSRC/CATALOG 映射后确认）：
+    #   carve 载体 0x1D = 720x360，胶片框 FRAME_ICON 0xE8 = 40x40，均无需偏移。
+    # 之前「图标目录 -4 / carve 载体 0x1B」是 CATALOG 地址映射错误导致的误判。
+    frame_id = FRAME_ICON
+    carve_id = CARVE_FROM
+    frame = get_icon(img, frame_id)
     assert frame.shape == (40, 40, 4)
-    w, h, base = descriptor(img, CARVE_FROM)
+    w, h, base = descriptor(img, carve_id)
     assert (w, h) == (720, 360)
     j = 0
     out = {}
@@ -560,11 +598,11 @@ def patch_film_icons(img, keys, desc_tab, icon_ids=None):
         if icon_id >= NEW_ICON0:
             d = desc_tab + 8 * (icon_id - NEW_ICON0)
         else:
-            d = img.word(CATALOG + 4 * icon_id)
+            d = img.raw_word(CATALOG + 4 * icon_id)
         if icon_id >= NEW_ICON0 or descriptor(img, icon_id)[:2] != (40, 40):
-            img.write(d, struct.pack('<HHI', 40, 40, base + 1600 * j))
+            img.raw_write(d, struct.pack('<HHI', 40, 40, base + 1600 * j))
             j += 1
-        dw, dh, off = struct.unpack('<HHI', img.read(d, 8))
+        dw, dh, off = struct.unpack('<HHI', img.raw_read(d, 8))
         assert (dw, dh) == (40, 40)
         o = iconbin(img) + 4 * off
         box = FILM_BOXES.get(key)
@@ -634,7 +672,7 @@ def patch_movie_checks(img, tone, film):
         words = assemble(src, at)
         size = 12 if setv == 0 else 13
         assert len(words) == size
-        img.write(at, struct.pack(f'<{size}I', *words))
+        img.raw_write(at, struct.pack(f'<{size}I', *words))
     return len(sites)
 
 
@@ -715,7 +753,7 @@ def patch_checks(img, tone, accept):
             size = 13
         words = assemble(src, at)
         assert len(words) == size, (hex(at), len(words))
-        img.write(at, struct.pack(f'<{size}I', *words))
+        img.raw_write(at, struct.pack(f'<{size}I', *words))
     return len(sites)
 
 

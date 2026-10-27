@@ -35,7 +35,9 @@ def iconbin(img):
 
 
 def descriptor(img, icon_id):
-    return struct.unpack('<HHI', img.read(img.word(CATALOG + 4 * icon_id), 8))
+    # CATALOG（图标目录 0x550020FC）在 GR IIIx 里 RAM 地址不变（ram_delta=0），
+    # 用 raw_word（只换 DSRC 基址，不 +0x08），与 off() 的 +0x08 区分。
+    return struct.unpack('<HHI', img.raw_read(img.raw_word(CATALOG + 4 * icon_id), 8))
 
 
 def get_icon(img, icon_id):

@@ -93,6 +93,32 @@ GR3_ADDRS = {
 # 缓存：gr3x_addr_map.json 里的 {符号名: {old, new, delta}}
 _cache = None
 
+# 区间映射表：GR III 2.10 地址区间 -> 固定 delta（GR IIIx 1.70 相对偏移）。
+# 引擎大量使用「符号基址 + 偏移」访问（如 RECORDS + 4*slot、CURVE_LIB + 4*i、
+# RD_TONE + 0x1C + 4*e），且会读出「指针值」再当作地址访问（record 对象、曲线表等）。
+# 点映射只覆盖 132 个符号本身，覆盖不了这些「基址+偏移」和「指针目标」。
+# 本表按「整体平移段」补齐，让 gr3x_of 对任意落段地址都能正确重定位。
+#
+# 每段 delta 均经「长块精确匹配 + 唯一命中」或「指针表分段重映射反推」逐段核验
+# （relocate_gr3x_v3.py / 本轮逆向），不是猜测值。
+GR3X_INTERVALS = (
+    # (start, end, delta)   —— end 含端点；按 start 升序排列，查找用二分
+    (0x5318DEA0, 0x53190108, +0xC0),   # RD_KIND / RD_CONTROLLER（RAW dev 布局）
+    (0x531ACB00, 0x53289148, +0xD8),   # SH_KIND + 图标 getter/draw + 菜单 case + RD_OPT/RD_TONE 枚举（含 RD_TONE 函数体 default case 到 0x53289148）
+    (0x532922B4, 0x532A9A84, +0xF4),   # NAME_FN/ICON_FN + DSTR/DICON 字符串 getter
+    (0x532BD784, 0x535C7814, +0xF0),   # PROXY 链(18) + STR1/STR2 + EXIF_CTOR/READ/WRITER
+    (0x536DB7DC, 0x536EF9B8, -0x28),   # pipeline / film_cave / CSP / GETTER / AREA
+    (0x53B58FCC, 0x53B5ACB4, -0x6D8),  # 只读数据表（idx2tone / movie / RD_OPT_ENUMS/SLOTS）
+    (0x53B5E078, 0x53B5F4D8, -0x6D0),  # 图标 descriptor 表（CATALOG 目录项指向）
+    (0x53D2B6F4, 0x53D36400, -0x620),  # EXIF pairs / EXIF read tab / ZERO_SRC
+    (0x53DC2A54, 0x53DC806C, +0x138),  # STOCK_SET / ZERO_TABLE / 零数据 / record 对象 / YCC / MATOBJ/TOBJ 指针目标（0x53DC 区整体 +0x138，2026-10-27 验证含 0x53DC3A40 YCC）
+    (0x53EFB0E4, 0x53EFC928, +0x138),  # 曲线数据区（CURVE_LIB 指针目标，整段 +0x138 平移，2026-10-26 验证 100% 匹配）
+    (0x5407D63C, 0x5407D9DC, +0x100),  # CATALOG 图标目录（运行时 0x550020FC 的静态初值；CATALOG ram_delta=0，2026-10-27 验证 +0x100 精确匹配）
+    (0x54094230, 0x540943B8, +0x108),  # RAM 表位置（MA_TABLE / RECORDS / YCC_SETS）
+    (0x54094408, 0x54094E00, +0x008),  # RAM 对象区（record / SHARED_REC 等，整体 +8 重布局）
+    (0x540B2B44, 0x540B2C78, +0x108),  # CURVE_LIB 曲线库指针表
+)
+
 
 def _load():
     global _cache
@@ -105,16 +131,34 @@ def _load():
     return _cache
 
 
+def _interval_of(addr):
+    """在 GR3X_INTERVALS 里二分查找 addr 所属区间，返回 delta；未命中返回 None。"""
+    lo, hi = 0, len(GR3X_INTERVALS) - 1
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        s, e, d = GR3X_INTERVALS[mid]
+        if addr < s:
+            hi = mid - 1
+        elif addr > e:
+            lo = mid + 1
+        else:
+            return d
+    return None
+
+
 def gr3x_of(addr):
     """把 GR III 2.10 地址映射到 GR IIIx 1.70 地址；未定位返回 None。
 
-    通过「地址 → 符号名」反查已定位表。因为 relocate 的输出是 {name: {old,new}}，
-    这里按 old 值匹配。
+    先查「点映射」（132 个符号精确地址），未命中再查「区间映射」（整体平移段），
+    覆盖引擎「基址+偏移」访问和「读出的指针值」访问。
     """
     m = _load()
     for entry in m.values():
         if entry.get('old') == addr:
             return entry.get('new')
+    d = _interval_of(addr)
+    if d is not None:
+        return addr + d
     return None
 
 

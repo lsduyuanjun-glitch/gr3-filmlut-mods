@@ -42,9 +42,10 @@ def patch_raw_nr_min_iso(img, min_iso=6400, first=None):
         assert tab >> 16 == 0x53EF
         for i in range(first):
             e = tab + 20 * i
-            if img.read(e, 1) != b'\0':
-                assert img.read(e, 1) == b'\1'
-                img.write(e, b'\0')
+            # e 是「读出的指针目标」（已是目标固件原生地址），用 raw 访问避免 GR IIIx 双重偏移
+            if img.raw_read(e, 1) != b'\0':
+                assert img.raw_read(e, 1) == b'\1'
+                img.raw_write(e, b'\0')
                 changed.append(i)
     assert set(changed) == set(range(36, first))
     return f'NR enable cleared for ISO index 36..{first - 1}, 2 variants'

@@ -6,6 +6,11 @@ from gr4_editor.codec.frames import decode_payload, section_rows, framed_contain
 from gr4_editor.firmware import _repack_frames
 
 BASE, DSRC, DDST, DLEN = 0x53000000, 0x5407B540, 0x55000000, 0x3A080
+# GR IIIx 1.70 的 DSRC 基址偏移 +0x100（RAM 静态初值区整体后移）；RAM 运行地址整体 +0x08。
+# 2026-10-27 逆向确认（见 work 验证）：GR IIIx DSRC=0x5407B640，RAM 表（MA_TABLE/RECORDS/
+# YCC_SETS/CURVE_LIB/MATOBJ/TOBJ/B_TABLES）运行地址均 = GR III 地址 +0x08。
+DSRC_GR3X = 0x5407B640
+RAM_DELTA_GR3X = 0x08
 EXPECT_SHA = 'd6a3c9c288d784080e7b283222ecdd8752adfeed6faa36dab44f73115354bfd4'
 
 # 各机型官方固件 SHA（按 model id 识别）。GR IIIx 系列共用 fwdc243b 1.70。
@@ -33,15 +38,21 @@ class Image:
         self.target = bytearray(self.original)
         # GR IIIx 机型：加载地址重映射表（gr3_addr_map.gr3x_of 做地址 → GR IIIx 地址）
         self._remap = None
+        self._dsrc = DSRC                 # DDST→DSRC 转换的源基址（GR IIIx 用 +0x100 的 DSRC_GR3X）
+        self._ram_delta = 0               # off() 里 RAM 硬编码地址的整体偏移（GR IIIx 下 +0x08）
         if model in ('gr3x', 'gr3xhdf'):
             import gr3_addr_map as _am
             self._remap = _am
+            self._dsrc = DSRC_GR3X
+            self._ram_delta = RAM_DELTA_GR3X
 
     def off(self, addr):
         if DDST <= addr < DDST + DLEN:
-            addr = DSRC + addr - DDST
-        if self._remap is not None:
-            # GR IIIx：把 GR III 2.10 地址重定位到 GR IIIx 1.70
+            # RAM 地址（0x55xxxxxx）：GR IIIx 下 RAM 运行地址整体 +0x08，DSRC 基址 +0x100。
+            # 这里 addr 是「引擎硬编码的 GR III 地址」，需先 +ram_delta 再到 GR IIIx 的 ROM 静态初值。
+            addr = self._dsrc + (addr + self._ram_delta) - DDST
+        elif self._remap is not None:
+            # 代码区 / ROM 地址：GR IIIx 下走区间表重定位
             new = self._remap.gr3x_of(addr)
             if new is None:
                 raise SystemExit(
@@ -55,6 +66,22 @@ class Image:
     def read(self, addr, n): o = self.off(addr); return bytes(self.target[o:o + n])
     def write(self, addr, data): o = self.off(addr); self.target[o:o + len(data)] = data
     def word(self, addr): return struct.unpack('<I', self.read(addr, 4))[0]
+
+    # --- raw access: 仅做 DDST→DSRC 转换，不做 gr3x_of 重映射 ---------------------
+    # 引擎从固件里读出的「指针值」（如 record 对象指针、matrix 指针、曲线库指针）
+    # 已经是目标固件（GR IIIx）的原生地址，再用 off() 会双重偏移。
+    # raw_* 方法用于访问这类「已是目标地址」的指针目标。
+    # 注意：RAM 地址（0x55xxxxxx）这里已是目标固件原生地址，故只换 DSRC 基址、不再 +ram_delta。
+    def raw_off(self, addr):
+        if DDST <= addr < DDST + DLEN:
+            addr = self._dsrc + addr - DDST
+        o = self.rtos0 + addr - BASE
+        assert self.rtos0 <= o < self.rtos_end, f'addr 0x{addr:08X} out of RTOS'
+        return o
+
+    def raw_read(self, addr, n): o = self.raw_off(addr); return bytes(self.target[o:o + n])
+    def raw_write(self, addr, data): o = self.raw_off(addr); self.target[o:o + len(data)] = data
+    def raw_word(self, addr): return struct.unpack('<I', self.raw_read(addr, 4))[0]
 
     def rtos(self): return bytes(self.target[self.rtos0:self.rtos_end])
 

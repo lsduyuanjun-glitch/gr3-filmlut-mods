@@ -67,3 +67,8 @@ webtool/t_kunrdt
 .verify_fix/
 .zip_test/
 
+
+# 逆向过程中间产物（保留本地参考，不进库）
+relocate_gr3x_v2.py
+relocate_gr3x_v3.py
+work/gr3x_addr_map.json.bak_v3
